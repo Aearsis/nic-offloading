@@ -1,0 +1,157 @@
+\section{Mellanox ConnectX-4}
+\abbr{PRM}{Programmer's Reference Manual}
+\abbr{MPFS}{Multi Physical Function Switch}
+\abbr{E-Switch}{Ethernet Switch}
+\abbr{TIR}{Transport Interface Receive}
+\abbr{TIS}{Transport Interface Send}
+
+This controller from Mellanox was announced in late 2014. It is a combined
+network controller for both Ethernet and InfiniBand. The fourth version is not
+the most recent one, as Mellanox already produces ConnectX-5 and develops
+ConnectX-6. We decided to include ConnectX-4 mainly due to the
+\acrfull{PRM} \cite{mlx-prm} being public. However, the open driver for
+ConnectX-5 is already merged into the Linux kernel, and we will try to provide
+updated information where applicable.
+
+Counterintuitively, the controller is being driven by \sw{mlx5\_core} driver in the
+Linux kernel, while the \sw{mlx4} driver supports controllers up to ConnectX-3.
+The rationale seems to be that ConnectX-3 is a 40 Gbps controller, hence the
+suffix 4. For complete configuration, an external collection of tools is needed.
+The kernel drivers are dedicated to controlling one network function, not the
+adapter as a whole.
+
+The controller is capable of presenting up to 16 physical functions and up to
+256 virtual functions using \a{SR-IOV}. Both of these need to be configured by
+the vendor-provided firmware utilities. Only then can the virtual functions be
+``activated'' by standard means.
+
+Connection to the host is realized using PCIe Gen 3 x16. To the network, the
+controller opens 4 or 8 \a{SerDes}\footnote{Serializer-Deserializer. Such
+interfaces can be configured to support various \a{PHY} adapters.} lines with
+25 Gbps throughput each, which
+can be used to create an adapter with 2 physical 100 Gbps ports.
+
+The global configuration of the controller is stored in non-volatile memory, and
+needs to be configured using an out-of-kernel utility. Such configuration
+includes mainly switching between the Ethernet and InfiniBand modes (if
+applicable), enabling \a{SR-IOV} and the number of functions created.
+Interestingly, the controller is capable of running one Ethernet and one
+InfiniBand port.
+
+\subsection{Switch layout}
+
+While the PRM \cite{mlx-prm} provides enough information about the processing
+pipeline, it does not describe the operation of the packet processing before
+the packet reaches the \a{PCI} function. A brief explanation was provided in
+a cover letter for patches introducing the \a{SR-IOV} support for the kernel driver
+by Or Gerlitz \cite{lwn-mlx-sriov}.
+
+The controller has two layers of switches. The first one, \acrfull{MPFS}, is
+responsible for switching unicast traffic among physical functions. Broadcast
+and multicast traffic is always flooded. The \a{MPFS} is managed through
+so-called L2 Table, whose configuration interface is covered in the PRM
+\cite{mlx-prm}. Basically, the L2 Table matches packets based on the destination
+\a{MAC} address and optionally the \a{VLAN} tag, and selects the target physical
+function. Therefore, the \a{MPFS} is actually a very simple, non-learning
+switch.
+
+The second layer, \acrfull{E-Switch}, exists for every physical function.
+It operates on entities called \emph{Vports}. Initially, there are two Vports
+-- one for the uplink, one for the physical function. Unmatched traffic always
+goes to one of these two, depending on the traffic direction. The
+\a{E-Switch} must be configured with rules to direct traffic to virtual
+functions as well. This is possible only from the driver of the physical
+function.
+
+For configuration purposes, every driver is responsible for managing its
+own Vport context. Whenever the context is updated by a virtual function, the
+driver of physical function receives an event. It can check the validity and
+conformation to any local policy and then update the configuration accordingly.
+
+\subsection{The Pipeline}
+\label{mlx:pipeline}
+
+The pipeline is made of simple elements which are chained together. For any of
+these elements, there can be multiple instances, resulting in significant
+flexibility. Instances are created at runtime through a command interface.
+Every instance can be configured separately.
+
+A received packet arrives at a root \emph{Flow table}. Flow tables are allocated
+in a \a{TCAM} and can match on all available fields. Those include fields from the
+Ethernet, \a{VLAN}, \a{IPv4}, \a{IPv6}\ \a{UDP}, \a{TCP}, \a{VXLAN} and
+\a{GRE} headers. For \a{MAC}-in-\a{UDP} tunnels, inner fields are supported as
+well.
+
+Flow tables contain \emph{flow groups}. A flow group defines a mask for all the
+available fields, which selects bits that are required to match. A flow group
+then contains one or more \emph{flows}, which define the matched value.
+A matched flow can either be passed to the next stage, forwarded to another flow
+table or dropped.
+
+Newer versions of the controller extend the available actions to create
+a flexible match-action pipeline. The possibilities now include manipulation
+with tunnel headers (encapsulation, decapsulation), individual header
+modification or even IPSec encryption and decryption. We can see the new actions being used in the
+\linuxfnc{drivers/net/ethernet/mellanox/mlx5/core/en\_tc.c}{1859}{parse\_tc\_nic\_actions} function
+in the \sw{mlx5} driver.
+
+To prevent cycles when forwarding is used, every table must have a level
+defined. Forwarding is possible only to a table with higher level. The root
+table is the only table with level 0.
+
+Once in the packet lifetime, multiple target flow tables can be specified. From
+there, the packet is cloned and processed by multiple paths. The split is
+possible only when forwarding from a table with level $< 64$ to a table with
+level $\ge 64$, enforcing the unicity condition.
+
+To illustrate the simplicity of the engine in the background, the controller
+does not check whether the matched fields are valid in the context of the packet
+-- for example, matching the destination \a{IPv4} address does not automatically
+check whether the packet is \a{IPv4}. Unless the rules are programmed to check
+the protocol first, they might be matching on garbage.
+
+Another action that can be performed only once in the pipeline is tagging the
+flow with an arbitrary \emph{Flow tag}. The tag is then reported out-of-band in
+the completion event.
+
+Once the last table is processed, the packet is forwarded to a specified
+\acrfull{TIR}. This entity is responsible for performing stateless offloads,
+which will be discussed further. Also, \a{TIR} can perform \a{RSS} by selecting
+the target Receive Queue indirectly based on the output from a configurable hash
+function and a redirection table. With regard to available hash functions, the
+driver has similar flexibility as the Intel XL710 controller.
+Again, the driver is responsible for configuring the Flow tables so that only
+packets that are subject to \a{RSS} are delivered to \a{TIR} performing
+\a{RSS}. If the tables are misconfigured, the result of the hash function is
+undefined.
+
+The receive queues are created dynamically as well. The responsibility of a Receive
+Queue is to store the packet and report to a Completion Queue, which may result
+in interrupting the host. Unexpectedly, the Receive Queue might strip
+a \a{VLAN} tag from the received packet first. We could not find this
+feature used in the Linux kernel driver.
+
+For transmitting a packet, the pipeline is reversed. First, the packet reaches
+a Send Queue, where the packet is stored until it is to be scheduled. From
+there, packets are being withdrawn by instances of \a{TIS}, counterparts of
+\a{TIR}. \a{TIS} is responsible for performing \a{LSO}, if applicable. Also,
+a fixed priority is assigned to \a{TIS}, which presumably plays a major role in
+scheduling.
+
+One would expect a match-action pipeline to be implemented on egress as well.
+It does exist, but at the egress of the \a{E-Switch}. Therefore, it is not
+covered in the PRM \cite{mlx-prm}. In the source code of the Linux driver, we
+can see the rules being constructed in
+\linuxfnc{drivers/net/ethernet/mellanox/mlx5/core/en\_tc.c}{2386}{parse\_tc\_fdb\_actions}.
+
+\subsection{Stateless Offloads}
+
+The controller supports checksum verification and calculation. As opposed to
+Intel controllers, it computes the pseudo-header checksum by itself and ignores
+the initial value of the checksum field.
+
+Unexpectedly for such an advanced controller, all the stateless offloads are
+supported only for pure \a{TCP}/\a{UDP} over \a{IPv4}/\a{IPv6}, no tunnelling
+headers must be involved. This limitation is remedied in more recent versions
+thanks to the possibility to peel off the tunnel headers before they reach the
+\a{TIR}, or add them after they are processed with \a{TIS}.

@@ -1,0 +1,167 @@
+%%% The main file. It contains definitions of basic parameters and includes all other parts.
+
+%% Settings for single-side (simplex) printing
+% Margins: left 40mm, right 25mm, top and bottom 25mm
+% (but beware, LaTeX adds 1in implicitly)
+%\documentclass[12pt,a4paper]{report}
+%\setlength\textwidth{145mm}
+%\setlength\textheight{247mm}
+%\setlength\oddsidemargin{15mm}
+%\setlength\evensidemargin{15mm}
+%\setlength\topmargin{0mm}
+%\setlength\headsep{0mm}
+%\setlength\headheight{0mm}
+%\let\openright=\clearpage
+
+%% Settings for two-sided (duplex) printing
+\documentclass[12pt,a4paper,twoside,openright]{report}
+\setlength\textwidth{145mm}
+\setlength\textheight{247mm}
+\setlength\oddsidemargin{14.2mm}
+\setlength\evensidemargin{0mm}
+\setlength\topmargin{0mm}
+\setlength\headsep{0mm}
+\setlength\headheight{0mm}
+\let\openright=\cleardoublepage
+
+%% Generate PDF/A-2u
+\usepackage[a-2u]{pdfx}
+
+%% Character encoding: usually latin2, cp1250 or utf8:
+\usepackage[utf8]{inputenc}
+
+%% Prefer Latin Modern fonts
+\usepackage{lmodern}
+
+%% Further useful packages (included in most LaTeX distributions)
+\usepackage[english]{babel}
+\usepackage[maxnames=99]{biblatex}
+\usepackage[nottoc]{tocbibind} % makes sure that bibliography and the lists
+			    % of figures/tables are included in the table
+			    % of contents
+\usepackage[usenames]{xcolor}  % typesetting in color
+\usepackage[T1]{fontenc}
+\usepackage[textsize=tiny,textwidth=0.8in]{todonotes}
+\usepackage[chapter,cachedir=listings,finalizecache,outputdir=build]{minted}
+\usepackage[toc,acronym,nogroupskip,nomain]{glossaries}
+\usepackage{glossary-mcols,enumitem,tabularx,tikz,graphicx,fancyvrb}
+
+\setglossarystyle{mcolindex}
+
+\usetikzlibrary{backgrounds,fit,decorations.pathmorphing,arrows.meta}
+\tikzset{>=To}
+
+\hyphenation{sche-duling}
+
+\definecolor{lightgray}{gray}{0.95}
+\colorlet{darkred}{red!35!black}
+\colorlet{darkblue}{blue!35!black}
+\colorlet{darkgreen}{green!35!black}
+
+\colorlet{hl}{yellow!30}
+\colorlet{hl-red}{red!20}
+\colorlet{hl-blue}{blue!10}
+
+\setlist[itemize,enumerate]{noitemsep}
+
+\usemintedstyle{borland}
+%\setminted[shell]{autogobble,linenos,breaklines,frame=single,framesep=10pt}
+%\newmintinline{shell}{}
+%\newenvironment{shell}{\VerbatimEnvironment\begin{minted}{shell}}{\end{minted}}
+
+%%% Basic information on the thesis
+
+% Thesis title in English (exactly as in the formal assignment)
+\def\ThesisTitle{Network Interface Controller Offloading in Linux}
+
+% Author of the thesis
+\def\ThesisAuthor{Bc. Ondřej Hlavatý}
+
+% Year when the thesis is submitted
+\def\YearSubmitted{2018}
+
+% Name of the department or institute, where the work was officially assigned
+% (according to the Organizational Structure of MFF UK in English,
+% or a full name of a department outside MFF)
+\def\Department{Department of Distributed and Dependable Systems}
+
+% Is it a department (katedra), or an institute (ústav)?
+\def\DeptType{Department}
+
+% Thesis supervisor: name, surname and titles
+\def\Supervisor{prof. Ing. Petr Tůma, Dr.}
+
+% Supervisor's department (again according to Organizational structure of MFF)
+\def\SupervisorsDepartment{Department of Distributed and Dependable Systems}
+
+% Study programme and specialization
+\def\StudyProgramme{Computer Science}
+\def\StudyBranch{Software Systems}
+
+% An optional dedication: you can thank whomever you wish (your supervisor,
+% consultant, a person who lent the software, etc.)
+\def\Dedication{%
+TODO: Dedication.
+}
+
+% Abstract (recommended length around 80-200 words; this is not a copy of your thesis assignment!)
+\def\Abstract{%
+TODO: Abstract.
+}
+
+% 3 to 5 keywords (recommended), each enclosed in curly braces
+\def\Keywords{%
+	{hardware offloading} {network} {linux}
+}
+
+%% The hyperref package for clickable links in PDF and also for storing
+%% metadata to PDF (including the table of contents).
+%% Most settings are pre-set by the pdfx package.
+\hypersetup{unicode}
+\hypersetup{hidelinks}
+\hypersetup{breaklinks=true}
+
+% Definitions of macros (see description inside)
+\include{macros}
+
+\makeglossaries
+\loadglsentries[main]{abbreviations}
+
+% Use the acronyms as acronyms. We can't define everything...
+\let\a\acrshort
+
+\addbibresource{bib/ieee.bib}
+\addbibresource{bib/linux.bib}
+\addbibresource{bib/manuals.bib}
+\addbibresource{bib/rfc.bib}
+
+\thesispreamble
+
+% Title page and various mandatory informational pages
+\begin{document}
+\include{title}
+
+%%% A page with automatically generated table of contents of the master thesis
+\tableofcontents
+
+\input{intro}
+\input{offloading}
+\input{nics}
+\input{linux}
+\input{rfc}
+\input{conclusion}
+
+\include{bibliography}
+
+% \listoffigures
+% \listoftables
+
+\printglossaries
+
+\appendix
+\input{docs}
+
+% \chapwithtoc{Attachments}
+
+\openright
+\end{document}

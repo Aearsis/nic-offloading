@@ -1,0 +1,33 @@
+\chapter{Selected Controller Capabilities}
+
+This chapter documents the current state of the art with respect to offloading. We
+focus on the following controllers:
+
+\begin{itemize}
+	\item Intel 82599 10 Gigabit Ethernet Controller
+	\item Intel Ethernet Controller XL710
+	\item Mellanox ConnectX-4
+	\item Chelsio Terminator 6
+	\item Netronome NFP-6000
+\end{itemize}
+
+The selection was influenced by the support for match-action offloading, which is the
+primary focus of the thesis. We have chosen the most recent controllers
+supported by the Linux kernel. The order is arbitrary, though we preferred
+controllers with publicly available specifications, as we know more about them.
+
+% Intel-specific abbreviations
+\abbr{DCB}{Data Center Bridging}
+\abbr{VMDq}{Virtual Machine Device Queues}
+
+% Used by sections to refer to manuals.
+\newcommand{\sect}[1]{\todo{Fix the \textbackslash sect!}}
+
+\input{nic-82599}
+\input{nic-xl710}
+\input{nic-mlx}
+
+\iltodo{Review language below this point.}
+
+\input{nic-chelsio}
+\input{nic-nfp}

@@ -1,0 +1,91 @@
+\section{Netronome NFP-6000}
+
+\abbr{FPC}{Flow Processing Core}
+
+As the last examined controller, we have chosen Netronome NFP-6000. The design
+of the NFP controller series is presumably completely different from other
+vendors. Instead of being a highly specialized packet processing silicon, the
+controller is a generic programmable compute unit with features for packet
+processing and network connectivity. The Netronome controllers NFP-4000 and
+NFP-6000 share the same architecture, but differ in the number of functional
+units used.
+
+Information in this section is based mostly on papers published by Netronome
+\cite{nfp-4k-too,nfp-prm,nfp-micro-c}, with few bits deduced from the Linux
+kernel source code.
+
+The controller is used in adapters by Netronome exclusively. It is attached to
+the host via up to four independent PCIe Gen 3 x8 interfaces, connecting to up
+to four CPU sockets in one host. They can handle up to four 100 Gbps Ethernet
+interfaces, with both integrated \a{MAC} or a transmitter connected via SFP+,
+QSPF or CXP.
+
+All controllers are composed from so-called islands, which have isolated
+responsibilities. Most of the islands are connected with a bus, which can
+exchange data between them. The architecture is modular, allowing to create
+different versions of the same controller design.
+
+The islands include:
+
+\begin{description}
+	\item[Ingress MAC and Packet Processing] \hfill \\
+		Receives packets from the network interface. Parses headers, verifies
+		checksums and constructs packet metadata. The packet payload is sent to
+		memory units, packet metadata to Flow Processing islands.
+	\item[Flow Processing] \hfill \\
+		Performs arbitrary processing of packets, using the packet metadata.
+	\item[Egress Packet Processing and \a{MAC}] \hfill \\
+		Reorders packets from the same flows, and schedules them to the network.
+	\item[ARM Subsystem] \hfill \\
+		Contains a fully-featured ARM processor, which is able to run Linux.
+		This processor can be used to configure or monitor the controller as
+		well as run any other application.
+	\item[Crypto] \hfill \\
+		Specialized circuits to support Flow Processing units in encryption and
+		decryption of arbitrary data.
+	\item[Memory units] \hfill \\
+		Globally-accessible memory units to store tables or data into. Apart
+		from up to 30 MB of on-chip memory, there is an external memory unit which
+		supports up to 24 GB off-chip DDR 3.
+	\item[PCIe] \hfill \\
+		Used for communication with the host. Packets sent by the host are
+		processed similarly to ingress packets, the payload is stored in the
+		memory and metadata are passed to Flow Processing islands.
+\end{description}
+
+An important building block is a \acrfull{FPC}, which is a programmable 32-bit
+processor core designed for packet processing. The core runs up to 8 threads,
+which are cooperatively scheduled when waiting for data, similarly to threads
+on \a{GPU}s.
+
+Flow processing islands are made of 12 \a{FPC}s each. They do the most of the
+packet processing work. Apart from forming the Flow processing islands,
+\a{FPC}s are spread in lower numbers in other islands as well, making even the
+fixed parts of the pipeline programmable.
+
+The \a{FPC}s can be programmed using an open source \a{SDK} to perform any
+processing. The \a{SDK} provides a framework to program the packet processing
+using the \a{P4} or C language, or allows to write programs running on bare
+metal.
+
+The processor is not fully featured, it has a simple architecture (e.g.\ cannot
+calculate with floating point numbers, there is no stack and so on), but
+certainly is more flexible than a match-action pipeline. The controller is
+therefore able to do any packet processing for any application, provided the
+program fits into the instruction memory.
+
+If not configured and programmed by the user, the controller ships with
+firmware, which emulates the behavior of a conventional \a{NIC}. The firmware
+offers several ``apps'', which define the capabilities of the controller from
+the operating system point of view.
+
+As the capabilities of this controller are implemented by software, it does not
+make sense to describe the controller according to the current version. We may
+assume that the controller fits well into any reasonable offload model.
+
+Taken to the extreme, the controller is capable of running Open vSwitch by
+itself, on the \a{ARM} processor, offloading the heavy lifting to the \a{FPC}s.
+Both without the host intervention. Still, the ports of the virtual switch
+correspond to individual network interfaces presented to the host, creating
+a very unusual scenario of a separate machine running Open vSwitch, connected
+via PCIe to the host.

@@ -1,0 +1,152 @@
+\section{Intel Ethernet Controller XL710}
+\label{nic:xl710}
+\renewcommand{\sect}[1]{\cite[#1]{XL710}}
+
+\abbr{VSI}{Virtual Station Interface}
+\abbr{NVM}{Non-Volatile Memory}
+
+Although the XL710 is not a direct successor of 82599, but more like a member
+of another branch of Intel networking \a{ASIC}s, they are similar in design
+principles and features.
+
+The silicon was announced in 2014. It is embedded in adapters from Intel and
+Lenovo, plus adapters from less known vendors from China. As all other controllers from
+Intel, its specification \cite{XL710} is publicly available.
+
+The Linux kernel driver for this controller is called \sw{i40e}, corresponding
+to the 40 Gbps speed. The patches introducing the driver were posted even
+before the specification was released, in 2013.
+
+The controller offers two variants of connection to the network -- either
+through 2 independent 40 Gbps ports or through 4 independent up to 10 Gbps
+ports. The ports can be connected either directly to the medium or to an
+external \a{PHY} using \a{MAUI}. The controller connects to the host through
+PCIe 3 with 8 lanes. A simple calculation shows that the maximum network
+bandwidth (80 Gbps) is slightly higher than that of the PCIe interface.
+
+Part of the configuration presented here is stored in a non-volatile memory
+off-chip, and is therefore persistent most of the time. Such configuration
+changes the way how the device presents itself to the host and manages static
+allocation of resources. We can say that this configuration is part of the
+firmware, which is quite easily modifiable.
+
+The controller presents itself as up to 8 physical functions. The important
+difference from virtual functions created with \a{SR-IOV} is that the drivers
+of the physical functions are in charge of configuring the virtual functions
+assigned to them. There can be as many as 128 virtual functions in total,
+arbitrarily divided among physical functions (configuration stored in \a{NVM}).
+
+One could say that the multi-presence of physical functions introduces another
+layer of virtualization, when 8 almost-isolated environments can be created to
+run inner virtualized networks over physical wires shared by all of them.
+However, any of the drivers for the physical functions can request
+configuration of the global resources, such as the firmware and the
+non-volatile memory. So, the physical functions cannot be just handed out to
+customers to deploy their own virtual networks.
+
+The controller supports a similar range of offloads as the 82599 controller. The
+big difference between them is the support for various tunnelling protocols
+across all the offloads: \a{IP}-in-\a{IP}, Teredo, \a{IP}-in-\a{GRE},
+\a{MAC}-in-\a{GRE} (\a{NVGRE}), \a{VXLAN} and Geneve.
+
+\subsection{Stateless Offloads}
+
+Both checksum offloads and \a{LSO} are supported with the extended support for
+tunneling. Surprisingly, no form of \a{LRO} is supported.
+
+Regarding the checksum offload for TCP and UDP, the pseudo-header must be
+computed in software. For \a{MAC}-in-\a{UDP} tunnels, the support does not
+cover the outer \a{UDP} header. Instead, those protocols are (un)supported in
+a generic way, because the software specifies only the total length between
+the outer and inner \a{IP} headers, allowing the inner transport-layer checksum to
+be computed without specifying the concrete tunnelling protocol in use. This
+limitation should not pose a problem, because these protocols have only
+optional checksum \sect{8.3.4.3, 8.4.4.3}. Similarly, the \a{LSO} engine
+supports \a{TCP} segmentation of packets up to 256 KB even when they are
+encapsulated in a tunnel.
+
+\subsection{Multiple Queues}
+
+The traffic to host is delivered through one of 1536 available queue pairs
+(a transmit and a receive queue form a pair). The distribution of queues is
+persistently configured for physical functions, which can then dynamically
+assign them to virtual functions at runtime. While one physical function can be
+assigned all 1536 queues, virtual functions are limited to obtaining up to 16 queues.
+
+The internal switch architecture does not work directly with functions but with
+entities called \glspl{VSI}, which represent generic packet destinations or
+virtual switch ports. There can be as many as 384 \glspl{VSI},
+representing physical functions, virtual functions, switch control ports,
+traffic snoopers or just another target assigned to a physical function.
+
+The internal switch configuration options are very rich. Just explaining the
+internal switch architecture occupies 150 pages in the specification
+\sect{7.4}. We will try to avoid going into detail.
+
+The basic idea is as follows. Whenever a packet is received on one of the
+physical ports, an outer \a{VLAN} tag (called service \a{VLAN} tag, or just
+S-tag) is stripped and determines an ID of the internal virtual switch that is
+then used for switching. This layer can be turned off, in which case the default
+internal virtual switch is used.
+
+There can be as many as 16 internal virtual switches, each spanning
+a disjoint set of \a{VSI}s. Every switch can run either as a fully-featured
+manageable switch (allowing \a{VM}-to-\a{VM} traffic), or just port
+aggregator, which relies on external switch looping \a{VM}-to-\a{VM}
+traffic back. At most one physical port can be connected to every switch.
+
+All the internal switches are not learning, and they must be managed in
+order to deliver any traffic. The forwarding database can be configured with
+rules matching on the  Ethertype (for control traffic), the \a{MAC} address (optionally
+hashed), the \a{VLAN} ID, or the \a{MAC} address together with the \a{VLAN} ID. Individual
+ports can be marked as promiscuous for unicast and multicast traffic separately.
+
+As the switching is realized on \a{VSI}s and not functions, the host can use
+the switching capabilities to offload a software switch without incorporating
+\a{SR-IOV}. Intel calls this mode of operation \a{VMDq} 2, which extends the
+\a{VMDq} mode we have seen in the 82599 controller. The key idea is to assign
+all concerned \a{VSI}s to the physical function and use the information created
+when the packet is switched to accelerate the switching in software. In this
+mode, the controller supports switching based on fields from up to the transport
+layer header -- destination \a{IP} address, tunnel ID, inner \a{MAC} address in
+a tunnelled packet or a combination of these.
+
+After the list of target \a{VSI}s is created, the packet goes through a series
+of filters very similar to those of 82599. We will not go through them again,
+let us just have a look at changes.
+
+The engine was extended with support for all the tunnelling protocols. That
+especially means that the filters can be used on tunnelled packets (which miss
+all filters on 82599) and that the tunnelling header fields are available to
+match on.
+
+The flexible field on which the Flow Director matches was extended to extract 16
+bytes from up to 3 offsets within the payload of a packet \sect{7.1.4}. The
+payload can be defined roughly as the first packet header that is not
+identified by the internal parser.
+
+Parser identifies fields in the first 480 B of the packet. From these, a 128B
+field vector is constructed. The Flow Director filters are able to match on up
+to 48 bytes. At most 8192 rules can be inserted in total. The memory is shared
+for all functions -- every function has a configurable portion of guaranteed
+space and the rest is available freely.
+
+The RSS engine was extended to support multiple hash functions. Apart from the
+Microsoft-defined Toeplitz hash function (used in other RSS implementations),
+it supports a simpler variant when software needs to compute the value as well.
+Also, the maximum number of queues used for RSS was raised to 64 queues, but
+for physical functions only, because virtual functions can have at most 16
+queues in total.
+
+On the transmit path, the packet goes through a sequence of filters mainly
+provided for security purposes (anti-spoofing, validating \a{VLAN} tag, etc.).
+Then switching is performed to determine whether the traffic is local or
+needs to be scheduled to a wire. As the switching topology is guaranteed to be
+a tree rooted at the physical port, the controller can divide the available
+bandwidth hierarchically. Every switching element can be configured to
+divide its bandwidth between the entities connected to the element. At the lowest
+level, \a{VSI}s can configure how their bandwidth is distributed among their
+queues. Depending on the configured mode, the bandwidth is split among traffic
+classes -- either at the root of the tree, under the switching elements or
+under \a{VSI}s.
+

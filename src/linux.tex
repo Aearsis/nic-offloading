@@ -1,0 +1,970 @@
+\chapter{Hardware Offloading in Linux}
+
+Before we dive into how Linux supports various offloading techniques, how they
+are configured and implemented, let us remind the development
+model of the networking stack in Linux kernel. Linux
+community does not publish any guidelines for network device vendors like
+e.g.\ Microsoft does with its \acrfull{NDIS} \cite{NDIS}. In the Windows world,
+vendors create controllers with the driver interface in mind, and are
+restricted to features specified by \a{NDIS}. In the Linux world, both the
+drivers and the driver interfaces follow the design of the hardware. The
+development is spontaneous and lacks centralized control. Therefore, all available
+solutions are somewhat improvised by definition.
+
+\section{Ethtool}
+
+Until recently, the only gateway to the hardware offloading features was the
+\cmd{ethtool} utility. Its main purpose is to communicate with and
+control the networking driver. The name might suggest it is restricted to
+wired Ethernet adapters, but it is not. It can be used to control e.g.\ WiFi
+drivers as well. Before we review the implementation of various offloads, let
+us have a look at the tool usage and output.
+
+The general syntax for \cmd{ethtool} is as follows:
+
+\begin{shell}
+$ ethtool [action] <ifname> [arguments]
+\end{shell}
+
+Here \texttt{<ifname>} represents the (required) name of the network
+interface, and \texttt{[action]} selects a particular functionality of the
+tool, which can be further parameterized by \texttt{[arguments]} (both
+optional).
+
+The utility is developed along with the kernel and shares the kernel
+versioning. It should be available in all Linux distributions.
+
+\section{Features}
+
+For every network interface, there is a set of flags called \emph{features}.
+The flag set serves as a shared data structure at multiple places in the
+kernel. Most notably, the driver uses them to report the capabilities of the
+\a{NIC}, and the network stack to control them individually.
+
+\begin{listing}
+	\begin{shell}[fontsize=\scriptsize]
+$ ethtool --show-features eth0
+Features for eth0:
+rx-checksumming: on
+tx-checksumming: on
+	tx-checksum-ipv4: off [fixed]
+	tx-checksum-ip-generic: on
+	tx-checksum-ipv6: off [fixed]
+	tx-checksum-fcoe-crc: off [fixed]
+	tx-checksum-sctp: off [fixed]
+scatter-gather: on
+	tx-scatter-gather: on
+	tx-scatter-gather-fraglist: off [fixed]
+tcp-segmentation-offload: on
+	tx-tcp-segmentation: on
+	tx-tcp-ecn-segmentation: off [fixed]
+	tx-tcp-mangleid-segmentation: off
+	tx-tcp6-segmentation: on
+udp-fragmentation-offload: off
+generic-segmentation-offload: on
+generic-receive-offload: on
+large-receive-offload: off [fixed]
+rx-vlan-offload: on
+tx-vlan-offload: on
+ntuple-filters: off [fixed]
+receive-hashing: on
+highdma: on [fixed]
+rx-vlan-filter: off [fixed]
+vlan-challenged: off [fixed]
+tx-lockless: off [fixed]
+netns-local: off [fixed]
+tx-gso-robust: off [fixed]
+tx-fcoe-segmentation: off [fixed]
+tx-gre-segmentation: off [fixed]
+tx-gre-csum-segmentation: off [fixed]
+tx-ipxip4-segmentation: off [fixed]
+tx-ipxip6-segmentation: off [fixed]
+tx-udp_tnl-segmentation: off [fixed]
+tx-udp_tnl-csum-segmentation: off [fixed]
+tx-gso-partial: off [fixed]
+tx-sctp-segmentation: off [fixed]
+tx-esp-segmentation: off [fixed]
+fcoe-mtu: off [fixed]
+tx-nocache-copy: off
+loopback: off [fixed]
+rx-fcs: off
+rx-all: off
+tx-vlan-stag-hw-insert: off [fixed]
+rx-vlan-stag-hw-parse: off [fixed]
+rx-vlan-stag-filter: off [fixed]
+l2-fwd-offload: off [fixed]
+hw-tc-offload: off [fixed]
+esp-hw-offload: off [fixed]
+esp-tx-csum-hw-offload: off [fixed]
+rx-udp_tunnel-port-offload: off [fixed]
+rx-gro-hw: off [fixed]
+\end{shell}
+	\caption{An \cmd{ethtool} command showing features of an Intel I219-LM \a{NIC} on kernel 4.16.}
+\label{lst:ethtool-show-features}
+\end{listing}
+
+The \cmd{ethtool} command can be used to display the current state of all features with
+the \Verb|--show-features| action, as shown on Listing \ref{lst:ethtool-show-features}.
+In the first column, we can see all features that are supported
+by the current kernel. Next, the output shows which features are currently enabled
+on the interface by listing them as being \texttt{on}. In case the feature is
+supported but disabled at the moment, it is shown as being \texttt{off}. In
+case the feature is not supported, it is listed as \texttt{off [fixed]}. The
+last case, \texttt{on [fixed]}, is for features that cannot be disabled,
+because they do not correspond to offloads but rather to general-purpose flags,
+such as the ability to use high memory for \a{DMA}.
+
+For features that can be turned on and off from the userspace, one can use the
+\cmd{ethtool} utility as well, namely with the \texttt{features} action. To give
+an example, the following command can be used to enable \texttt{ntuple-filters}
+and disable \texttt{generic-receive-offload}.
+
+\begin{shell}
+# ethtool --features eth0 ntuple on gro off
+\end{shell}
+
+Unfortunately, the feature names differ from those listed by
+\Verb|--show-features|. To further confuse the user, not even the manual
+reveals the mapping between the names explicitly, only a textual description is used.
+
+In the kernel source code, the feature flags are defined as macros in the
+\linuxfile{include/linux/netdev\_features.h} file. Throughout the following text, we
+will reference the features using these macro names.
+
+\subsection{Checksum Offload}
+\label{sec:linux-csum}
+
+Linux makes use of checksum offloading. As there are no knobs to tune the
+behavior, the checksum computation is either offloaded or not. The only means
+of configurating the checksum offload are the feature flags. However, it would
+be hard to cover all the possible cases which the hardware can offload with any
+static description -- imagine all the combinations of tunnel headers, \a{VLAN}
+tags, \a{IPv6} extension headers, etc. Instead, the stack handles offloading
+the checksum computation on a per-packet basis.
+
+An extensive documentation of checksum offloading in Linux can be found in
+\linuxfile{include/linux/skbuff.h}. A short overview follows.
+
+The \skb{} structure carries multiple fields related to checksumming. Most
+notably, the \field|ip_summed| field indicates the current state of the \skb{}
+with respect to checksum. The meaning of its values differs depending on
+the direction of travel.
+
+\subsubsection{Ingress Direction}
+
+First, let us explore the receive path, which is simpler. The dedicated feature
+flag \macro|NETIF_F_RXCSUM| is used to control receive checksum offload in the
+driver. However, the stack does not rely on driver behavior, it always examines
+the \field|ip_summed| field. When the driver receives a packet from
+the \a{NIC}, it is too late to change the state of an offload. Therefore, the
+driver is expected to use the meta-information given by the device to detect what
+checksums were verified, and modify the \field|ip_summed| field accordingly.
+The options are (not in original order):
+
+\begin{description}
+	\item[\macrofmt{CHECKSUM\_NONE}] the device did not perform any kind of
+		validation.
+	\item[\macrofmt{CHECKSUM\_PARTIAL}] the packet comes from a virtual source
+		with offloaded transmit checksum, therefore the checksum is not
+		expected to be verified.
+	\item[\macrofmt{CHECKSUM\_UNNECESSARY}] some of the checksums were verified to
+		be correct by the device. The zero-based index of the last verified
+		checksum is denoted in the field \field|csum_level|.
+	\item[\macrofmt{CHECKSUM\_COMPLETE}] the device computed the whole packet
+		checksum, which the driver fills into the \field|csum| field.
+\end{description}
+
+From the point of view of the stack, the most flexible and future-proof option
+is \macro|CHECKSUM_COMPLETE|. As the stack has to parse the headers anyway, it
+is easy to compute their checksums and subtract them from the computed
+checksum. Therefore, the \a{NIC} accelerates the verification in all layers without
+having to understand them.
+\label{tag:linux-rxcsum}
+
+\subsubsection{Egress Direction}
+
+The transmit path is a bit complicated with the presence of \acrfull{GSO}, which we
+describe in the next section. For now, let us focus on plain checksum
+offloading without \a{GSO}. In contrast to the receive path, when the packet
+leaves any software entity (networking stack, driver), the entity must ensure
+that the packet already has a valid checksum or the following entity is
+prepared to compute it. The driver indicates its ability to compute checksums
+by the feature flags. There are five of them:
+
+\begin{description}
+	\item[\macrofmt{NETIF\_F\_IP\_CSUM} and \macrofmt{NETIF\_F\_IPV6\_CSUM}]
+		indicates the ability to compute one's complement checksum for
+		\a{TCP}/\a{UDP} over \a{IPv4} and \a{IPv6}, respectively. Deprecated in
+		favor of \macro|NETIF_F_HW_CSUM|.
+	\item[\macrofmt{NETIF\_F\_FCOE\_CRC} and \macrofmt{NETIF\_F\_SCTP\_CRC}]
+		indicates the ability to compute \a{CRC} for \a{FCoE} and \a{SCTP} packets,
+		respectively.
+	\item[\macrofmt{NETIF\_F\_HW\_CSUM}]
+		indicates that the driver can compute any one's complement checksum as
+		defined by the fields in the \skb{} structure.
+\end{description}
+
+As for the configuration, the \cmd{ethtool} command controls all the flags at
+once, it is not possible to selectively enable or disable only a subset of the
+available checksum offloads using the current userspace \a{API}.
+
+We can see that none of the flags consider the checksum of the \a{IPv4} header.
+The reason for that is simple -- it is not expensive to calculate the checksum
+for the 20 bytes of the header, especially when the header is constructed in the
+software already. An obvious exception is an \a{IP} packet emitted by \a{TSO},
+where the \a{IP} packets are constructed by the controller itself.
+
+We can also see that there were attempts to cover the simplest cases, which
+were then superseded by the generic one's complement checksum capability. The idea
+is that the driver can check whether the controller will be able to compute the
+checksum. If the combination of headers is recognized by the controller, the
+driver instructs it to do so. In the other case, it just computes the checksum
+in software. Still, the driver must be prepared to accept packets which are
+already checksummed (or does not require any checksum to be computed in
+general).
+
+The slice of a packet to be checksummed in the generic cases (including
+\a{FCoE} and \a{SCTP}) is defined as a suffix of the packet starting at
+the position specified in the \field|csum_start| field of the \skb{} structure.
+The driver shall ensure that the checksum will be written at offset
+\field|csum_offset|. In case the controller does not support computing the
+checksum in a generic way, the driver should check the values in these fields
+to make sure they will be recognized by the controller.
+
+In order to simplify the driver code, a helper \fnc|skb_csum_hwoffload_help| is
+provided. Whenever the driver cannot be sure that the controller will compute
+the checksum, it can just call the helper and it will compute the checksum in
+software.
+
+Seemingly, the situation complicates when tunnelling is incorporated, as there
+are two headers which include checksums -- e.g.\ an inner \a{TCP} packet
+wrapped in an outer \a{UDP} packet (with \a{IP} and \a{MAC} headers in between).
+While it might happen that the \a{TCP} checksum is already computed because
+the tunnel is only encapsulating traffic from elsewhere, it is definitely
+possible that the traffic is local and therefore both checksums need to be
+filled in.
+
+There is a surprising clever trick. When the checksum of the outer packet is
+computed, it is defined as a sum of partial checksums of all its parts. The
+part that is most expensive to compute is the inner \a{TCP} packet with the payload.
+However, since the inner packet carries its own checksum, the checksum of the
+whole inner packet including the checksum field is not affected by its
+contents. This means that the checksum field for the outer packet does not
+depend on the inner \a{TCP} packet at all. Thus, the outer checksum can be
+computed inexpensively in the software from the headers only, and the hardware
+checksum offload can be used to compute the expensive inner checksum. This
+technique is called Local Checksum Offload and was implemented by Edward
+Cree \cite{linux-lco}.
+
+\subsection{Segmentation Offload}
+
+The Linux networking stack utilizes various segmentation offloads.
+Moreover, it pushes the idea even further, and implements software techniques
+to reduce the number of stack traversals. In the end, these software techniques
+naturally extend to the hardware-offloaded techniques.
+
+Quite isolated is a utilization of \a{LRO}. Again, once the driver
+receives a packet, \a{LRO} is already done. Therefore, the only support which is
+needed from Linux is a way to configure whether \a{LRO} should be enabled or
+not. As expected, the \macro|NETIF_F_LRO| feature flag serves exactly this
+purpose.
+
+When \a{LRO} is not available or has to be disabled (e.g.\ because of routing),
+there is still a way to coalesce packets to move data around in bigger chunks.
+Linux implements so called \acrfull{GRO}. Before we explain it, it is necessary
+to introduce the \a{NAPI}.
+
+\a{NAPI} is a mechanism of the Linux kernel that reduces overhead induced by interrupts. When
+a network device receives a packet, it copies it to a prepared \a{DMA}
+buffer in the host memory, marks that buffer as valid, and interrupts the host.
+A \a{NAPI}-compatible driver then does not receive the packet in the interrupt
+handler itself, but schedules a polling softirq handler instead. Most
+importantly, it disables the interrupt temporarily. The initial packet as well
+as those received in the meantime are processed in a polling
+loop. When no more packets are available, the polling loop ends and enables the
+interrupt again. This way, packet processing is not being interrupted by
+reception of new packets, resulting in considerably higher packet processing
+rate.
+
+When the packets are already received in batches, the \a{GRO} mechanism works
+to merge them if possible. As the \skb{} structures are received by \a{NAPI},
+a \struct|gro_list| of \skb{}s is built. Any newly received packet is first
+compared with the members of the list, checking whether the two are similar enough to be
+merged into one.
+
+An important feature of \a{GRO} is that it is not limited to any particular
+protocol layering. The mechanism is fully generic (hence the name), and
+individual protocol handlers might decide what information can be lost by
+merging packets. As a rule of thumb, packets that are candidates for merging
+must contain the same sequence of headers and only a few selected fields might
+differ.
+
+The received packets are kept in the \struct|gro_list|, until they are delivered
+(passed to the upper layer), which happens once any of the following condition holds:
+
+\begin{itemize}
+	\item The \a{GRO} protocol handler decides to deliver a packet. This happens for example when a \a{TCP}
+		packet with any flag arrives, because flagged packets cannot be
+		coalesced. Then both packets are delivered immediately, in the correct
+		order.
+	\item The \struct|gro_list| would become too large (more than 8 entries in
+		the current kernel). Then the oldest packet is delivered to make room
+		for the new one.
+	\item The \a{NAPI} polling loop is over. Then all packets are delivered at
+		once.
+\end{itemize}
+
+In contrast to \a{LRO}, \a{GRO} does not coalesce packets
+in a lossy way. Merged packets not only have to belong to the same flow, but
+also have similar characteristics like their timestamp. The goal is to allow
+\a{GRO}-merged packets to be later split into the same segments on output.
+Therefore, \a{GRO} can be used on routers and bridges as well.
+
+Some \a{NIC} vendors, being aware of \a{LRO} limited usability, implemented a more
+strict version of \a{LRO}, which passes enough metadata about the original
+segmentation of packets to re-segment them later. These \a{NIC}s can then
+offload \a{GRO} to the hardware. Examples include recent Broadcom and Qlogic
+controllers. This feature is indicated by the \macro|NETIF_F_GRO_HW| feature flag.
+
+The memory layout of the \skb{} structures allows for creation of fragmented
+buffers. This feature is used heavily in \a{GRO}, as the packets are not copied
+into one big continuous buffer -- instead, their fragment lists are
+concatenated, which is a constant operation.
+
+The counterpart of \a{GRO} is \acrfull{GSO}. The \a{GSO} mechanism segments
+a super-packet just before it is passed to the driver -- so that the driver
+code is not complicated by segmentation. The super-packets might come from
+\a{GRO}, or be directly created from the data sent through a socket.
+
+As we have seen, there are \a{NIC}s that can segment the packet in the
+hardware, provided its protocol layering is compatible. When this is the
+case, the network device indicates the situation using a feature flag, and the
+segmentation is not performed. We can see \a{TSO} as one of the special cases
+here.
+
+There is yet another technique that sometimes allows to offload segmentation
+of tunnelled packets to hardware without specialized hardware support. The basic
+requirement is that the hardware must support segmentation, where the outer
+headers are just bytewise copied.
+
+Suppose that all segments of the packet (including the last one) are the same size. Then,
+none of the outer header fields need to be changed when the inner packet is
+segmented, including the outer checksum. The idea is similar to Local Checksum
+Offload, checksum cancels out the changes in the inner packet, making the outer
+checksum constant.
+
+The initial requirement of having equally-sized packets is easy to achieve.
+Instead of giving up on late segmentation, the payload is split in two. The
+first is sized to an integral multiple of \a{MSS}, the second holds the last
+segment of different size.
+
+Unfortunately, the \a{IPv4} ID will be the same for all packet segments.
+However, \a{TCP} streams require \a{IPv4} packets to carry the ``Don't
+Fragment'' flag, therefore the ID should not be examined by any network device,
+as proposed in RFC 6864 \cite{RFC6864}.
+
+Because the segmentation is only partially offloaded, this feature is called
+Partial \a{GSO}. It is controlled by the \macro|NETIF_F_GSO_PARTIAL| feature flag.
+
+\subsection{\a{TCP} Offload Engine}
+
+In Linux, full \a{TCP} stack offload is not supported at all. It is not just
+unsupported, it is actively rejected. There are many reasons for that,
+summarized in the article about \a{TOE} at Linux Foundation Wiki \cite{lf-toe}.
+The most relevant reasons for doing so include low flexibility in supporting
+the solution, complicated updates and possible security flaws.
+
+\section{Multiple Queues}
+
+Regarding the reception of packets into multiple queues itself, there is not much
+the network stack can do. The packet itself is received by the \a{NIC} driver,
+which constructs an \skb{} structure and hands it out to the stack for further
+processing. Similarly, using multiple hardware queues for transmission is
+nothing complicated. However, the idea to scale the number of channels that
+process the packets lead to several techniques.
+
+As a quick way to see how many queues are available and  being used, one can
+use the \cmd{ethtool} command:
+
+\begin{shell}
+$ ethtool --show-channels eth0
+Channel parameters for eth0:
+Pre-set maximums:
+RX:		0
+TX:		0
+Other:		1
+Combined:	63
+Current hardware settings:
+RX:		0
+TX:		0
+Other:		1
+Combined:	63
+\end{shell}
+
+The numbers represent the maximum and currently configured number of queues. If the
+device allows to use a different number of receive and transmit queues, they
+are given in the \texttt{RX} and \texttt{TX} rows. When the device requires
+to instantiate queues in pairs, one for each direction, the numbers are listed as
+\texttt{Combined}.
+
+\subsection{\acrlong{RSS}}
+
+First, let us consider pure \a{RSS}. To benefit, the card must
+be able to issue as many hardware interrupt vectors as there are queues. Also,
+the interrupt vectors must be pinned to individual \a{CPU} cores. This is done
+automatically by the \a{NIC} driver, as the interrupt vectors have to be
+registered even if \a{RSS} is not enabled.
+
+In a sense, \a{RSS} goes directly against the effort of \a{NAPI} to reduce the number of
+interrupts. Instead of packets being handled in batches, they are spread out to
+multiple queues, which trigger individual interrupts to be processed.
+To maximize the overall throughput, is most beneficial to configure one receive queue
+per \a{CPU} core.
+
+\a{RSS} is configured through the \cmd{ethtool} utility, namely its
+\Verb|--rxfh| action. The current setup can be queried with the
+\Verb|--show-rxfh| action.
+
+\subsection{Receive Packet Steering}
+\label{sec:rps}
+
+Similar to software segmentation offloads, the Linux network stack utilizes
+a software variant of \a{RSS} called \acrfull{RPS}. The key idea of both mechanisms is to
+distribute packet processing to multiple cores as soon as possible. When
+\a{RPS} is enabled for a given receive queue, then every packet received by
+that queue is hashed and redirected to a \a{CPU} determined by the hash. This
+happens as one of the first things after the packet exits the \a{NIC} driver,
+in \linuxfnc{net/core/dev.c}{4018}{netif\_rx\_internal}.
+
+\a{RPS} cannot be as beneficial as \a{RSS}, as the \a{CPU} handling the
+packet first has to parse the packet headers just to compute the hash.
+On the other hand, it is by far more flexible than the hardware implementation,
+as it can handle multiple protocols, tunnelled packets, various hashing
+functions and so on. It is also hardware independent, and can work even with
+devices with a single hardware receive queue.
+
+Unless handling mixed traffic which is only partially supported by \a{RSS} or
+when the number of queues supported by \a{RSS} is significantly lower than the number of
+\a{CPU} cores, it makes little sense to enable both \a{RSS} and \a{RPS}.
+
+\a{RPS} in Linux is configured for every receive queue separately through
+\texttt{sysfs}. In the directory of the queue,
+e.g.\ \texttt{/sys/class/net/eth0/queues/rx-0/}, there is a file named
+\texttt{rps\_cpus}, which contains the hexadecimal representation of a bitmap of
+\a{CPU} threads where to redirect the packets using \a{RPS}. It is disabled by
+default, one can enable it by setting bits in the bitmap.
+
+\subsection{Receive Flow Steering}
+
+As a third offload technique with similar acronym, Linux implements \acrfull{RFS}.
+The idea behind it is very simple. Instead of moving the packet processing (and
+the application) to the \a{CPU} where the packet was received, redirect the
+packet to where the application is running and the packets are processed. It is
+important to understand that while it might be worth moving the application
+once, the scheduler might need to migrate it elsewhere to balance load.
+
+When configured, \a{RFS} essentially only extends the lookup mechanism after
+the \a{RPS} hash is computed. The lower bits of the hash are used to find an
+entry in the global \struct|rps_sock_flow_table|. If the entry belongs to the flow
+being examined, \a{RFS} steers the packet to the \a{CPU} given in the entry
+instead of falling back to \a{RPS}.
+
+Entries are added to the flow table by protocol layers, with every packet
+processed or awaited by calling \fnc|sock_rps_record_flow|.
+Entries are never explicitly removed, instead, they are being replaced by new
+flows with the same low-order bits of their hash. The size of the table is
+configurable through the \Verb|net.core.rps_sock_flow_entries| sysctl variable.
+
+As there might be multiple \a{CPU}s waiting for the packet, the target \a{CPU}
+field might change quickly, potentially delivering newer packets earlier than
+older ones. To overcome this issue, two layers of tables are involved. The layer
+that is actually used for steering is local to the receive queue, and the
+target \a{CPU} for a flow in that layer only changes when no packets of that flow are
+waiting in the current \a{CPU} queue. The size of the local table is
+configurable through a the \Verb|rps_flow_cnt| \texttt{sysfs} file in the queue
+directory. A more detailed description can be found in the message of the commit
+implementing \a{RFS} \cite{linux-rfs}.
+
+As we have seen, the controllers usually feature some classification mechanism
+which allows to select the receive queue based on packet headers, and therefore could be
+used to offload \a{RFS} to hardware. When the \macro|NETIF_F_NTUPLE| network device feature
+is enabled, the \fnc|ndo_rx_flow_steer| callback is invoked with the information
+about the flow and the target receive queue whenever a new flow is to be steered.
+As receiving the packet to a wrong queue is not a serious error, there is no mechanism to
+remove a flow from the hardware. The hardware is expected to recycle older flow
+entries just as the software does.
+
+Among the controllers we examined, only Mellanox ConnectX offloads \a{RFS} in
+Linux. Instead of replacing the flows based on their hash value, it uses entries in
+the Flow Table (as described in section \ref{mlx:pipeline}) in a circular order.
+
+\subsection{Ethtool Network Flow Classification}
+
+While \a{RFS} improves cache locality, it does so only for flows that have
+been already seen. For example, if a dual-core system was running two virtual
+machines on dedicated \a{CPU} cores, the
+system would have to redirect half of the flows on average, because they would
+be initially sent to the wrong \a{CPU} core by \a{RSS} or \a{RPS}.
+
+Some \a{NIC}s (from our selection both the Intel controllers and Mellanox ConnectX)
+implement an optional \cmd{ethtool} operation to support explicit flow
+classification. Through the \cmd{ethtool} utility, these controllers can be
+configured to steer the matched packets to a specified receive queue. This mechanism
+has no software counterpart, therefore it is not considered to be an offload.
+If the mechanism is not implemented or enabled in the \a{NIC} driver, it just
+cannot be used.
+
+The setup starts with the user invoking \cmd{ethtool} with the \Verb|--config-nfc|
+action. Several common header fields can be specified for the
+classification, among others the \a{L4} port, the \a{IP} addresses, and the \a{VLAN} tags.
+Every rule then carries an index of the target receive queue where the matched
+packets will be sent. If the queue is specified as $-1$, the packet is to be dropped by the
+controller.
+
+Later, this mechanism was extended to store the target virtual function in the
+high-order bits of the queue number. This extension allows to select a receive
+queue of a different network device than the rules are installed to -- quite
+drastically changing the purpose of the mechanism. However, this was not
+adopted by any other controllers than the Intel ones, because as we have seen, other
+controllers perform switching separately from selecting the receive queue.
+
+\subsection{Transmit Packet Steering}
+
+In contrast to various scaling techniques on the receive side, there is no need
+to scale on the transmit side. Packets are generated by applications, which are
+naturally run by available \a{CPU} threads (as defined by local policy). The
+only optimization the stack offers is \acrfull{XPS}.
+
+The technique is essentially a careful transmit queue selection, based on the
+originating \a{CPU}. For every transmit queue, a set of \a{CPU}s which may use
+this queue for transmission can be specified. A reverse mapping is constructed
+and whenever a \a{CPU} needs to send a packet, a queue is selected
+using the flow hash, similarly to \a{RPS}. The queue number is
+then recorded for the socket so that next packets are sent using the same
+queue, preventing reorders.
+
+\a{XPS} is mainly an optimization to moderate the congestions on queue locks.
+
+\section{Express Data Path}
+\label{sec:xdp}
+\iltodo{Review this section.}
+
+When talking about high-performance packet processing in Linux, we cannot avoid
+mentioning \acrfull{XDP}. The idea of \a{XDP} is to allow the user to inject an
+arbitrary program to process packets early in the stack, even before \skb{}
+structure is allocated. The expected use cases include early packet dropping
+for \a{DoS} protection or wire-speed load-balancing or forwarding.
+
+Obviously, running a user-specified machine code in the kernel context is
+usually considered a bug. In the case of \a{XDP}, a special restricted
+instruction set is used -- \acrlong{BPF}. \a{BPF} is designed to be safe to be
+executed in the kernel context. Most notably, \a{BPF} programs cannot contain
+backward jumps and therefore they always ends after a finite number of
+instructions. Also, the instruction set is simplified enough so that programs
+can be verified whether they access only valid memory.
+
+The initial usecase of \a{BPF} was to allow packet sniffers to filter packets
+before they are passed to userspace \cite{bpf-usenix}. The user attaches
+a \a{BPF} program to a socket, the kernel verifies the program and runs it
+for every received packet. Depending on the result code, the packet is copied
+to the sniffing socket.
+
+In Linux, the original \a{BPF} instruction set was enhanced to better suit modern
+processor architectures. Also, support for data structures like arrays, hash
+tables or tries was added. Actually, the instruction set no longer reminds the original \a{BPF},
+but the name has not changed. Sometimes, the enhanced set is called eBPF while
+the original cBPF (classic \a{BPF}). In the Linux context, \a{BPF} almost
+exclusively refers to eBPF.
+
+There is an in-kernel \a{JIT} compiler from the enhanced \a{BPF} to the native
+instruction set. Therefore, running \a{BPF} programs does not come with any
+performance penalty. The compiler handles cBPF programs as well, by
+transcribing them to eBPF first.
+
+As a side note, \a{BPF} programs can be used as filters in the \a{TC}
+subsystem, using the \texttt{bpf} classifier.
+
+\a{XDP} programs are invoked as soon as a packet is received by the driver,
+before \skb{} structure is allocated. That means that \a{XDP} needs to be
+explicitly supported by the driver, even though it does not depend on the hardware at all.
+The program executed in \a{XDP} can decide what to do with the packet. The
+program can just pass the packet, in which case it is processed as usual. When
+the packet is dropped, the slot in the receive queue can be instantly reused
+with the same backing pages, reducing the overhead of dropped packets to a bare
+minimum.
+
+Unexpectedly, \a{XDP} can be offloaded to the hardware. Currently only the
+Netronome NFP controllers are able to do so, due to their software nature, but
+we can expect more controllers to support running \a{BPF} programs in the future. The
+NFP is able to offload both \a{TC} \texttt{bpf} filters and \a{XDP} programs.
+
+\section{Traffic Control}
+\label{sec:tc}
+
+\newcommand{\qdisc}{\a{qdisc}}
+
+The Traffic Control (\a{TC}) subsystem exists for handling packets of different
+classes in Linux. Before we get to the most advanced packet modification offload
+techniques, we need to look briefly at how \a{TC} works.
+
+One could say that the main purpose of \a{TC} is to assign a label (called
+\emph{traffic class}) to every packet and then act on the packet depending on
+its traffic class. For example, treat packets with interactive traffic with
+priority.
+
+Some manuals use the TC abbreviation for Traffic Class. To avoid confusion, we
+will always refer to Traffic Control with \a{TC} in the thesis.
+
+The \a{TC} subsystem was designed to support the Differentiated Services architecture in
+its full flexibility -- it allows to differentiate packets into classes, and apply
+policing, shaping, and scheduling. The subsystem is very flexible and generic,
+thus we do not aim to describe it completely.
+
+The subsystem is configured via netlink. However, there are only a few
+userspace applications that control the \a{TC} subsystem. Usually, the
+configuration is manual, in which case the \sw{tc} utility from the \sw{iproute}
+package is used.
+
+\subsection{Queue Disciplines}
+
+The \a{TC} runtime configuration consists of a tree of Queue Disciplines, for
+every network device and direction of travel. In both the \sw{tc} utility and
+all the available literature, Queue Disciplines are called \qdisc{}s for short. We
+will stick to this convention.
+
+Let us consider the egress direction first. There, the \a{TC} subsystem serves as the main buffer
+between the applications and the network interface. Whenever a packet is to be sent
+by an application, it is \emph{enqueued}. When the driver is ready to emit
+a packet (there is an empty slot in the hardware queue), a packet is
+\emph{dequeued} from \a{TC}. The implementation of these two operations is what
+defines a \qdisc.
+
+Take for example the \texttt{pfifo} \qdisc{}, which is probably the simplest
+one possible. It is a simple \a{FIFO} queue, for which the enqueue and dequeue
+operations have the standard meaning. The number of packets in a queue is
+bounded and when the queue is full, new packets are dropped.
+
+There are two flavors of \qdisc{}s -- \emph{classless} and \emph{classful}.
+The classful \qdisc{}s constitute the inner nodes in the \qdisc{} tree, as they
+have a child \qdisc{} for every class of packets. The classless \qdisc{}s
+are the leaves of the tree and actually store each packet
+until it is dequeued.
+
+One would expect the classless \qdisc{}s to treat all packets the same,
+but that is not true. Classless and classful in the \a{TC} context refer
+to the presence of child \qdisc{}s, not differentiating classes of packets.
+
+A typical example is the \texttt{pfifo\_fast} \qdisc, which is classless. It
+uses the \a{TOS} of the packet to select one of three bands\footnote{Band is
+just another name for a traffic class, but let us avoid the term for a classless
+\qdisc.}. Every band is a simple \texttt{pfifo}-like queue. The bands are
+dequeued in a strict priority order. Therefore, this classless \qdisc{}
+prioritizes packets depending on their \a{TOS} field.
+
+Another good example is the \texttt{tbf} \qdisc{}, which is classful even though
+it has only a single child class. The purpose of the \texttt{tbf} \qdisc{} is to shape the
+traffic dequeued from the inner \qdisc{} using the Token Bucket Filter algorithm.
+
+An alternative \qdisc{} taxonomy is suggested by the subsystem author, Alexey
+Kuznetsov, in the short review in \linuxfile{net/shed/sch\_api.c}, where he
+calls classless \qdisc{}s ``queues'' and classful \qdisc{}s
+``schedulers''. The naming is not perfect either, because some ``queues'' (like
+\texttt{pfifo\_fast}) can perform scheduling as well, while some ``schedulers''
+(like \texttt{tbf}) might not. As most of the world seems to stick to the
+class-based taxonomy, we will use it as well.
+
+Classless \qdisc{}s can do more than just queue packets. For example there is the
+\texttt{red} \qdisc{}, which implements the Random Early Detection algorithm to
+prevent congestion. In short, this \qdisc{} randomly drops packets when it is
+filling up, with the expectation that the flows that might cause the congestion
+have higher probability to be selected, because they have a higher number of
+packets going through. Because a dropped packet is usually a signal for the sender to
+slow down (e.g.~in~\a{TCP}), this can prevent the flow from congesting the link
+early.
+
+Classful \qdisc{}s are what adds flexibility to the system. Their purpose is not
+to directly enqueue and dequeue packets, but to select a child \qdisc{} to
+delegate the operation to. Classful \qdisc{}s mostly differ in the dequeue
+operation implementation, as they define in what order the child \qdisc{}s are
+dequeued, thus performing scheduling.
+
+For example, the \texttt{htb} \qdisc{} can be used to divide the available
+bandwidth among multiple classes using the Token Bucket Filter algorithm,
+hierarchically (hence its name, Hierarchical Token Bucket). The exact scheduling
+algorithm is quite complex, but allows the classes to share bandwidth with
+guaranteed rates while allowing to steal the unused bandwidth from others.
+
+The implementation of the enqueue operation might be interesting as well, but
+is usually dominated by the need to select the child \qdisc{} based on
+arbitrary packet characteristics. For this purpose, the \a{TC} subsystem
+contains filters.
+
+\subsection{Filters}
+
+Filters are runtime instances of classifiers. Filters are attached to \qdisc{}s
+and do the actual classification of packets. The separation of responsibilities between
+\qdisc{}s and filters follows the Unix philosophy, where simple tools can
+be stitched together to create complex policies. Many classifiers are
+available to the user. If there is no classifier that would serve
+the purpose, the user is encouraged to implement a new one.
+
+\begin{figure}
+	\begin{tikzpicture}[
+			y = -1cm,
+			qdisc/.style={draw,rounded corners, minimum width = 4cm, text depth=.25ex, text height=1.5ex, minimum height = 0.8cm,thin},
+			place/.style={draw, inner sep=1mm, circle, thick},
+		]
+		\begin{scope}[shift={(5.7,-0.5)}]
+			\node[qdisc,fill=hl-red] (red) at (0, 0) {\texttt{red} (classless)};
+			\node[qdisc,fill=hl-blue] (tbf) at (0, 1) {\texttt{tbf} (classless)};
+
+			\filldraw[rounded corners,fill=hl] (-3.2, -0.4) rectangle (-2.4, 1.4)
+				(-4, -0.4) -- (-3.6, -0.4) -- (-3.6, 1.6) -- (2.4, 1.6) -- (2.4, -0.4) -- (3.2, -0.4) -- (3.2, 2.4) -- (-4, 2.4) -- cycle;
+
+			\node at (0, 2) {\texttt{prio} (classful)};
+			\node[rotate=-90] at (-2.8, 0.5) {filters};
+
+			\draw[thick, ->] (-4.4, 0.5) to (-4, 0.5);
+			\draw[thick, ->] (-3.6, 0.5) to (-3.2, 0.5);
+			\draw[thick, ->] (-2.4,0) to (red.west);
+			\draw[thick, ->] (-2.4,1) to (tbf.west);
+			\draw[thick, ->] (red.east) to (2.4,0);
+			\draw[thick, ->] (tbf.east) to (2.4,1);
+			\draw[thick, ->] (3.2,0.5) to (3.6, 0.5);
+		\end{scope}
+
+		\draw[very thick,->,decorate,decoration={snake,post length=1mm}] (-.5, .5) -- (.5, .5);
+
+		\begin{scope}[shift={(-2.7,0)},font=\ttfamily]
+			\node[minimum size=1.3cm,draw,fill=hl,circle] (prio) {prio};
+			\node[minimum size=1.3cm,draw,fill=hl-red,circle,below left=4mm of prio] (red) {red};
+			\node[minimum size=1.3cm,draw,fill=hl-blue,circle,below right=4mm of prio] (tbf) {tbf};
+			\draw[thick, ->] (prio) -- (red);
+			\draw[thick, ->] (prio) -- (tbf);
+		\end{scope}
+
+	\end{tikzpicture}
+	\centering
+	\caption{The composition of \qdisc{}s. Filter block attached to the
+	\texttt{prio} \qdisc{} is used to select the inner \qdisc{}. Inspired by
+	figures in \cite{diffserv-linux}.}
+\end{figure}
+
+Filters are invoked to look at the packet and decide whether the packet
+belongs to some traffic class. Usually, filters directly select the child
+\qdisc{} for the packet to be enqueued to. Multiple filters can be attached
+to a \qdisc{}, in which case the priority assigned to them matters. Filters are
+always created for a single network protocol only -- in particular, filters for
+\a{IPv4} and \a{IPv6} are not shared and must be instantiated twice if needed.
+
+As one of the oldest classifiers, there is \texttt{u32}, the Ugly (or
+Universal) 32-bit classifier. It is able to match on any 32-bit word on the
+network layer. The match can also contain a mask, which selects the matched bits
+individually. Moreover, the classifier can use the masked word to index
+a hashtable. Implementation-wise, matching a concrete key and performing
+a lookup in a hashtable always alternates, but both can be trivialized to match everything in the step.
+The \texttt{u32} classifier tree can be created such that it is very efficient
+compared to combining other classifiers.
+
+We would like to mention the \texttt{flower} classifier as well. This
+classifier uses the kernel flow dissector to extract the header fields and allows
+to match on them. Initially it was called \texttt{openflow}, because it was
+supposed to match on fields defined by the OpenFlow protocol \cite{openflow}. As
+there is no reason to limit the classifier to these fields, it is extensible with
+other common header fields.
+
+An important distinction between the \texttt{u32} and \texttt{flower}
+classifiers is that while \texttt{flower} uses
+header fields identified by the kernel flow dissector, \texttt{u32} requires the
+user to identify the headers and fields themselves. On the other hand, it is
+possible to use \texttt{u32} for proprietary protocols without modifying the
+kernel code.
+
+\subsection{Actions}
+
+Because the \a{TC} subsystem has the ability to classify packets, it seemed convenient to
+use the classification for more than just selecting the target traffic class.
+Initially, filters could return an action code, which could for example drop the
+packet immediately (\macro|TC_ACT_SHOT|) or restart the classification
+(\macro|TC_ACT_RECLASSIFY|).
+\footnote{Actually, these were at first implemented by the policing framework of
+\a{TC}, and the macros were prefixed with \macrofmt{TC\_POLICY\_}. Policing was
+later generalized to actions.}
+
+With the knowledge of filters and simple actions, we can finally introduce the
+\texttt{ingress} \qdisc. As it makes little sense to shape or schedule incoming
+traffic, the \a{TC} subsystem has limited purview on the ingress side.
+Because there was no leaf \qdisc{} which would actually not queue packets,
+a special no-op \qdisc{} called \texttt{ingress} was created.
+The \texttt{ingress} \qdisc{} cannot have children, but performs
+classification. Its only initial purpose was to classify traffic and perform policing
+-- e.g.~drop traffic exceeding the configured bandwidth.
+
+Finally, a need for executing multiple actions arose. To satisfy it,
+another type of runtime entity was introduced -- an action. In the source code,
+they are called filter extensions, but the user manipulates them as
+actions. After an action is executed, it returns the action code, as the
+filters initially did.
+
+Some classifiers were extended to accept attaching multiple actions to them. When such a
+filter matches, the first action is executed. Another action result code was
+introduced (\macro|TC_ACT_PIPE|), which cause the next action to be executed. This
+way, the user can program the subsystem to do a lot of packet processing in the
+kernel.
+
+For example, there is the \texttt{mirred} action, which can perform packet
+mirroring or redirection. It can be used both to make the packet appear on
+ingress of a different network device, or to be sent out with one.
+
+As a special action there is \texttt{gact}, the generic action. It does
+nothing except returning a defined action code, emulating the original
+functionality.
+
+Several other actions are available to modify the packet data or metadata,
+such as \texttt{pedit}, \texttt{skbmod}, \texttt{skbedit}, or \texttt{csum}. As
+a special case of packet modification, \a{VLAN} tags and tunnel headers can
+be added or stripped by the \texttt{vlan}, \texttt{ife}, or \texttt{tunnel\_key}
+actions. The list is not exhaustive, new actions can be implemented.
+
+The whole pipeline is not necessarily linear. There are action codes that
+make the execution engine jump between actions or restart the classification.
+
+\subsection{Actions on Egress}
+
+The classification-action pipeline allows the user to perform a lot of packet
+processing in the kernel. However, it required a classful \qdisc{} in order to
+be able to execute filters and actions. Also, it was hard to configure \a{TC}
+for both \a{QoS} and packet processing at the same time.
+
+Therefore, Daniel Borkmann introduced the \texttt{clsact} \qdisc
+\cite{linux-tc-clsact}. Essentially, it is an \texttt{ingress} \qdisc to which
+two filter chains can be attached. One of them is used as the ingress chain as
+with the \texttt{ingress} \qdisc, the other one gets executed for egress traffic
+with a new hook. This way, the \a{TC} subsystem is invoked twice for an egress
+packet -- first for the egress chain in the \texttt{clsact} \qdisc, second for the
+root egress \qdisc.
+
+\subsection{Modularity}
+
+The \a{TC} subsystem is modular. \Acrshort{qdisc}s, classifiers and actions
+can be distributed as kernel modules and loaded into the subsystem at runtime.
+They can even be developed separately from the mainline. Therefore, it is not
+possible to describe every possible behavior of the subsystem.
+
+\subsection{Offloading}
+
+As we have seen, there is a considerable overlap in the packet processing
+capabilities between controllers and \a{TC}. This resulted in what kernel
+engineers call \a{TC} offloading.
+
+All the techniques described below are controlled by a single feature flag,
+\macro|NETIF_F_HW_TC|. Unlike other features, this one is rather used to
+disable the behavior -- enabling it might not change anything.
+
+At first, \a{TC} offload was limited to offloading of transmit priority scheduling
+to support \a{QoS} \cite{linux-hw-qos}. The network device gained a new
+callback, \fnc|ndo_setup_tc|, which was called to setup a number of traffic
+classes. The driver then configured the hardware scheduler and the stack with
+a mapping of classes to transmit queues. The stack then used the priority
+queues for priority traffic, improving latency by skipping the hardware
+buffers. The behavior was triggered by attaching an \texttt{mqprio} \qdisc,
+which was created specifically for this purpose.
+
+Quite recently, the mechanism was extended to also support other \qdisc{}s, and
+most notably, classifiers and actions. So far, \texttt{mqprio}, \texttt{cbs},
+\texttt{red} and \texttt{prio} \qdisc{}s and \texttt{u32}, \texttt{flower},
+\texttt{matchall}, and \texttt{bpf} classifiers are at least partially
+supported by some drivers.
+
+The mechanism works as follows: whenever the \a{TC} configuration is modified in
+a way interesting for some driver, an event is generated. This event is
+announced to the driver through the \fnc|ndo_setup_tc| callback. The callback
+is now effectively just a joined callback for different events, which are
+distinguished by its argument of the \struct|tc_setup_type| type.
+
+In reaction, the driver parses the event data and decides whether it is feasible to
+offload what triggered the event. For example, the \sw{ixgbe} driver offloads the
+\texttt{u32} classifier using the Flow Director filters described in section
+\ref{sec:82599-fdir}. The scheme of the offload is as follows:
+
+\begin{enumerate}
+	\item The driver handles the block creation event (more about blocks
+		later), in which it registers another callback.
+
+	\item The callback is invoked to handle \texttt{u32}-specific events, such
+		as creation or deletion of inner nodes of the \texttt{u32} tree. The
+		most interesting case is the creation of key node (\struct|tc_u_knode|),
+		which performs matching of a concrete value, that is handled in
+		\linuxfnc{drivers/net/ethernet/intel/ixgbe/ixgbe\_main.c}{8869}{ixgbe\_configure\_clsu32}.
+
+	\item Even though the Flow Director rules support a flexible field, the
+		offload does not consider it. Instead, it tries to match the hardware parser to
+		the \texttt{u32} tree, identifying the matched fields. When the fields
+		cannot be identified, the rule cannot be offloaded.
+
+	\item Actions for the rule are parsed in \fnc|parse_tc_actions| in
+		the same file. We can see that the driver recognizes actions to drop
+		the packet (as redirection to the drop queue) and to redirect the
+		packet to another function of the same device. If the action is not
+		supported, the rule cannot be offloaded.
+
+	\item A Flow Director rule equivalent to the \a{TC} rule is inserted into
+		the hardware table.
+\end{enumerate}
+
+This generic procedure is followed by the drivers of all the examined controllers
+as well. Offloading the \texttt{flower} filters is a bit simpler -- the driver does not
+need to parse the fields, because the classifier matches on well-known fields.
+The drivers vary mostly in the actions that are supported.
+
+The mechanism works quite well as an offload. The user can use any \qdisc{}s,
+classifiers and actions and provided the code is correct, compatible rules
+are offloaded. But what happens when only a subset of rules can be offloaded?
+As the offloaded rules are performed before they reach \a{TC}, how can the driver
+be sure that executing the rules in different order preserves the policy
+defined by the user?
+
+The answer is unfortunate -- it cannot. Currently, offloading a subset of rules
+can result in behavior which is different from that of \a{TC} in software. This
+is one of the biggest design flaws of the solution, which we try to address
+with the subsystem proposed in Chapter \ref{chap:rfc}.
+
+A partial workaround is provided by the ability to control whether individual rules
+can and will be offloaded. For relevant classifiers, two flags can be specified:
+\texttt{skip\_hw} and \texttt{skip\_sw}. When \texttt{skip\_hw} is set, the
+rule will not be offloaded. When \texttt{skip\_sw} is set, failure to offload
+the rule will result in the rule being rejected by the software as well.
+It is currently recommended to use these flags explicitly when \a{TC}
+offloading is enabled.
+
+\subsection{Shared Blocks}
+\label{sec:tc-shared-blocks}
+
+One of the root design features of \a{TC} is that all rules are specific to
+a network device. Whenever a single controller presents multiple devices to the
+system, \a{TC} must be be configured independently for each. Combined with
+limited and expensive resources available for offloading the \a{TC} rules, this
+independence started to pose a problem.
+
+The issue was solved recently by Jiří Pírko with the introduction of shared filter
+blocks \cite{linux-shared-blocks}. The patch introduces a new, global, runtime
+entity of \a{TC} configuration -- blocks. These fit in between \qdisc{}s and
+filters. When no shared block is specified, a new private one is created for the
+\qdisc{}, preserving backwards compatibility. In the other case, two or more
+\qdisc{}s may share the defined policy.
+
+The boilerplate needed to support \a{TC} offloading, however, got more
+complicated. Instead of handling events directly, the driver must register
+a callback on a newly-created block. The callback will then receive events from
+inside the block. Also, a future idea is that binding a block will replay all
+events, which is not yet supported. Instead, binding a block with any offloaded
+rule is forbidden.\footnote{Which is a bug confirmed by the author. Any
+configured rule should prevent the block from being bound.}
+
+When it comes to hardware resource utilization, there is still an important
+unresolved problem. When the rules are to be compiled into table entries, it is
+usually necessary to fix the table dimensions in advance. For example the Flow
+Tables present in Mellanox ConnectX controller series must be allocated with
+a maximum number of rows in mind, and the Flow Groups must have fixed masks.
+Currently, the driver relies on grouping similar rules together and heuristics
+in table size allocation.

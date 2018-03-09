@@ -9,15 +9,23 @@
 %%% the name of the corresponding style file (*.bst). Both styles
 %%% mentioned in this template are included in LaTeX distributions.
 
-\bibliographystyle{plainnat}    %% Author (year)
+% \bibliographystyle{plainnat}    %% Author (year)
 % \bibliographystyle{unsrt}     %% [number]
 
-\renewcommand{\bibname}{Bibliography}
+% Break line before URL
+\DeclareFieldFormat{formaturl}{\newline #1}
+\newbibmacro*{url+urldate}{%
+  \printtext[formaturl]{\printfield{url}}%
+  \iffieldundef{urlyear}
+    {}
+    {\setunit*{\addspace} \printurldate}}
+
 
 %%% Generate the bibliography. Beware that if you cited no works,
 %%% the empty list will be omitted completely.
 
-\bibliography{bibliography}
+\addcontentsline{toc}{chapter}{Bibliography}
+\printbibliography
 
 %%% If case you prefer to write the bibliography manually (without bibTeX),
 %%% you can use the following. Please follow the ISO 690 standard and

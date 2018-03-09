@@ -1,0 +1,563 @@
+\chapter{Proposed subsystem}
+\label{chap:rfc}
+
+The current state of \a{TC} offloading is not ideal. It somehow works in
+practice, but certainly has some drawbacks. These drawbacks support the
+motivation to explore other options. We would like to shortly review the most
+important problems of the \a{TC} offloading:
+
+\begin{description}
+	\item[Broken partial offloading] \hfill \\
+		When the user does not specify \Verb|skip_sw| flags, the hardware can
+		offload only a subset of rules. It is not guaranteed that the policy is
+		preserved.
+	\item[Flexibility] \hfill \\
+		While the flexibility of the \a{TC} subsystem is good for the user, it
+		complicates offloading. The user works with graph of rules which may
+		run programs, but the hardware needs tables and simple actions.
+	\item[Historic API] \hfill \\
+		The \a{TC} subsystem is complex and hard to understand. The code is
+		burdened with almost 20 years worth of ad-hoc extensions. Its
+		documentation is not up-to-date. Both developers of drivers and users
+		have hard time understanding the runtime structures.
+	\item[Bad error reporting] \hfill \\
+		The only feedback from the subsystem with regard to offloading is
+		a flag, whether a filter was offloaded or not. When it was not, the
+		user has no way of knowing why.
+\end{description}
+
+\noindent With these drawbacks in mind, we would like to propose a subsystem, which would
+overcome them. The subsystem is designed to be an offloadable representation of
+a match-action pipeline, which is present (in restricted forms) in contemporary
+\a{NIC}s. Along with avoiding the drawbacks of \a{TC} offloading, we focused on
+following goals:
+
+\begin{itemize}
+	\item Allow to use as much packet-processing capabilities of modern \a{NIC}
+		as possible.
+	\item The subsystem must follow the Linux nature of being a hardware
+		commoditizer, and allow a single configuration to run with any \a{NIC}.
+		Of course, it can be offloaded only when the \a{NIC} is compatible, but
+		the functionality should stay the same.
+	\item When the user wants to program the controller directly, there are
+		other solutions available. The subsystem should integrate well with the
+		kernel datapath.
+	\item Offloading the work of the subsystem should be as easy as possible.
+		The \a{API} against drivers should follow this purpose the most.
+	\item The hardware usually needs to allocate resources long in advance.
+		Allow to restrict the resources in software to ease (or allow) the
+		offload.
+	\item The user should be able to understand the subsystem easily. The
+		userspace utilities should interact with the subsystem through an
+		understandable \a{API}.
+	\item The offload must be restricted enough to preserve the defined policy.
+		Even when it is not possible to offload the setup completely.
+	\item Recent controllers have good classification engines, but not so rich
+		possibilities in modifying the packets. It should be possible to
+		offload the classification independently.
+	\item It is not possible to drop \a{TC} from the kernel. The subsystem must
+		not interfere with \a{TC}, if not used.
+	\item There are multiple ways how to represent the policy for the scenario.
+		Help the userspace with creating a setup which will be offloadable.
+	\item When the subsystem is not used, it should not slow down the
+		networking stack. We would like to avoid creating new hook as well.
+	\item When the work cannot be offloaded, doing the work in software should
+		not be extremely expensive, when it comes to performance.
+\end{itemize}
+
+\noindent The key idea is to replace \a{TC} in the offloading to match-action pipeline,
+without actually replacing \a{TC}. This proposal cannot be considered final and
+will be a subject to discussion at the networking mailing lists before a patch
+will be created. Also, it is not meant as ``all or nothing'' -- we present many
+ideas from which only a subset might be implemented in the end.
+
+\iltodo{Review language above.}
+
+\section{The big picture}
+
+The proposed subsystem is well separated -- it is not a module of
+\a{TC} or netfilter, but rather a completely standalone entity. It has its
+own \a{API} against the userspace and drivers. This way, we can focus on creating
+an interface that is clean and straightforward to use.
+
+The subsystem information base is stored per network namespace. In other
+words, entities created from inside a namespace are visible for all network devices
+inside that namespace. This way, we allow drivers to allocate resources once and
+share them between multiple \netdev s of the same controller. This decision
+is supported by recent work in upstream to allow sharing of \a{TC} classifier
+blocks between \netdev s, which works around a design limitation of \a{TC}, because
+resources we are talking about are quite limited.
+
+The subsystem has a userspace configuration utility and a kernel module.
+The utility is a part of the \texttt{iproute2} package, and follows
+the same usage principles. The kernel module does the hard work in packet
+processing. It will be possible (and desirable) to control the subsystem
+through the netlink \a{API}, the utility is mainly for observability and manual testing
+purposes. The expected primary customer of the userspace \a{API} is a high-level
+software tool (e.g.\ intrusion detection system, \a{SDN} controller, ...) More
+about expected usage later.
+
+The subsystem works with following entities: \emph{tables}, \emph{header
+fields}, \emph{flows}, and \emph{actions}. These terms are somewhat overloaded in
+the networking world, but in this chapter, we use them to reference the runtime
+entities of the proposed subsystem, unless specified otherwise.
+
+From the top level view, \emph{tables} form a directed graph. It
+is prohibited to create cycles, but it is not checked by the kernel
+module. There are several predefined types of \emph{tables}, but their
+behavior is not different from the ``generic'' type from the point of
+view of the module. The purpose of type is to restrict the model in order to
+allow offloading for simpler devices.
+
+Similarly, there is a preconfigured parser of several known \emph{header fields}
+(\a{MAC} addresses, Ethertype, \a{VLAN} tag, \a{IP} addresses, \a{TOS}, ports,
+\dots). The parser tree provides a standalone
+description of the packet header types and fields that can be extracted from them. This
+parser is extensible by generic \emph{header fields} at runtime to support
+custom protocols. A detailed description follows in section \ref{rfc:parser}.
+
+When a \emph{table} is created, the set of \emph{header fields} it uses is
+defined. This set is fixed and cannot be changed later. If the table is of one
+of the known types, the set of usable fields is restricted to a predefined
+subset. For example, a table of known table type ``\a{IP} 5-tuple filter''
+could match on a subset of transport layer protocol, source and destination \a{IP}
+addresses, source and destination ports. If the table is of the generic type, it
+can use any subset of all the defined header fields.
+
+Together with the header fields, a parser for the table has to be declared at
+creation time. We expect that for most of the time, the default Ethernet parser
+is used.
+
+We call the table entries \emph{flows}. The system is expected
+to be continuously modified by inserting and deleting flows from tables. Every
+flow has an individual chain of \emph{actions} assigned.
+
+\begin{figure}[h]
+	\begin{tikzpicture}[y=0.7cm]
+		\fill (0,1) rectangle (7,0) [fill=gray!20];
+
+		\draw[very thin]
+			(3, -1) -- (3, 3)
+			(6, -1) -- (6, 3)
+			(7, -1) -- (7, 3);
+		\draw
+			(0, -1) -- (0, 3)
+			(0, -1) -- (8, -1)
+			(0, 3) -- (8, 3)
+			(0, 2) -- (8, 2)
+			(8, -1) -- (8, 3);
+
+		\node at (1.5, -0.5) {\vdots};
+		\node at (4.5, -0.5) {\vdots};
+		\node at (6.5, -0.5) {\vdots};
+		\node at (1.5, 2.5) {\dots};
+		\node at (4.5, 2.5) {Header fields};
+		\node at (6.5, 2.5) {\dots};
+		\node at (1.5, 1.5) {\dots};
+		\node at (4.5, 1.5) {Flows};
+		\node at (6.5, 1.5) {\dots};
+		\node at (1.5, .5) {\dots};
+		\node at (4.5, .5) {\dots};
+		\node at (6.5, .5) {\dots};
+
+		\node[circle,inner sep=0.7mm,draw] at (7.5, 1.5) {};
+		\node[circle,inner sep=0.7mm,draw] (ac1) at (7.5, 0.5) {};
+		\node[draw,rectangle,minimum size=5mm] (ac2) at (9, 0.5) {};
+		\node[draw,rectangle,minimum size=5mm] at (9.5, 0.5) {};
+		\node[draw,rectangle,minimum size=5mm] at (10, 0.5) {};
+		\node[draw,rectangle,minimum size=5mm] at (10.5, 0.5) {};
+		\node[draw,rectangle,minimum size=5mm] at (11, 0.5) {};
+		\draw[-Stealth] (ac1) to[bend left=45] (ac2);
+		%\node at (2, 3.5) [text width=4cm] {Table};
+		\node (fk) at (8.2,-0.5) [coordinate,label=right:Flow keys] {};
+		\node at (10, 1.5) {Action chains};
+
+		\draw (7,0) to (fk) [help lines];
+	\end{tikzpicture}
+	\centering
+	\caption{The entities in a table.}
+\end{figure}
+
+Now we can finally explain what the main processing looks like: Say that
+the subsystem is called to process a packet using table $T$. The header fields
+which $T$ uses are extracted from the packet using the parser of $T$, and are
+joined to create a \emph{flow key}. The flow key is used to search the table
+and identify a \emph{flow}. Whenever a flow is identified, a sequence of
+\emph{actions} is executed. If \emph{next table} was set while $T$ was processed,
+the processing repeats with the next table.
+
+To prevent infinite loops, the process stops after a constant number of
+iterations. This limit is rather high and reaching it emits a warning in
+a rate-limited manner. To prevent malformed packets from reaching the system,
+the packet trapped in such loop is dropped.
+
+\subsection{Matching modes}
+
+Every table uses one of the predefined matching modes on the header fields. Those we
+propose are inspired by options available in the hardware pipelines:
+
+\begin{description}
+\item[Exact] All used fields must match exactly.
+\item[Hashed] The flow key is hashed and then only hashes are compared.
+\item[Mask-value] Emulate a \a{TCAM} search. The flow key is compared only on
+bits specified by the flow.
+\item[Range] Every field is checked to be inside an interval.
+\item[Longest-prefix match] A flow with the longest matching prefix is selected.
+\end{description}
+
+In the hashed mode, we do not specify the hash function to be used. The mode
+serves as a hint for hardware that it can afford collisions. In fact, the exact
+mode can be implemented with hash tables as well.
+
+\subsection{Actions}
+
+Apart from action chains assigned to individual flows, the table contains three
+more chains. The first is the \emph{default} chain, which is executed when no
+particular flow is matched. The other two are a \emph{pre-} and
+\emph{post-}chain, which are executed every time. The execution starts with the
+pre-chain, follows with the flow chain (or default chain) and finishes with
+the post-chain.
+
+Any action chain can be changed at runtime. Modifying a chain can result in
+change of table offload status -- either it can enable offloading of the previously
+not-offloaded table (or flow) or vice versa.
+
+An action chain is composed of primitive actions. The set of available
+primitive actions is specified by the subsystem and generally is not
+expected to be extendable by kernel modules. By design, the action system is
+much simpler than that of \a{TC}.
+
+Primitive actions can be parameterized. In terms of implementation, we propose
+a simple union containing possible argument types to keep things simple.
+
+To create a common understanding of action purpose and flexibility, an
+incomplete list of primitive actions follows:
+
+\newcommand{\act}[1]{\texttt{#1}}
+\begin{description}[noitemsep]
+\item[\act{drop}] \hfill \\
+	Drop the packet. Immediately stops processing.
+\item[\act{set next table <T>}] \hfill \\
+	After the processing of this table finishes, table \texttt{<T>} is
+consulted next. Multiple usages of this action overwrite each other.
+\item[\act{stop}] \hfill \\
+	Stop processing this table immediately.
+\item[\act{set field <field> <value>}] \hfill \\
+	Modify the header field \texttt{<field>} to contain \texttt{<value>}.
+\item[\act{copy value <field1> <field2>}] \hfill \\
+	Copy the value from \texttt{<field1>} to \texttt{<field2>}.
+\item[\act{set queue <Q>}] \hfill \\
+	On ingress, set the receive queue to which the packet will be enqueued
+	(makes sense only in hardware). On egress, set the transmit queue (makes
+	sense only in software).
+\item[\act{mirror to port <P>}] \hfill \\
+	Send a copy of the packet to egress on port \texttt{<P>}. As the port is
+	device-dependent, using such action disables offloading of the flow for all
+	other devices.
+\end{description}
+
+Even though the action system is simplified, we could extend it with
+conditionals and create a really flexible system. On the other hand, the
+purpose of the subsystem is to create better offloading opportunities, and more
+complicated packet-processing code should be implemented with different
+technologies (\a{XDP}, \a{BPF}, custom firmware, ...).
+
+To support more advanced features of modern \a{NIC}, we generally prefer adding
+a slightly complex primitive action than emulating it with several primitive ones.
+The older or less powerful controllers are not able to offload more complex chains
+anyway, and more specialized actions will result in less complex drivers.
+A reasonable overlap in action functionalities is acceptable.
+
+Let us extend the example of the ``5-tuple filter''. Such filter can be defined
+as a table with mask-value match mode to allow wildcard rules. The default
+action is empty, passing the packet through. Flows inserted to the table
+are created with the action chain containing only the \act{drop} action.
+The same table could be created as a whitelist filter by using the \act{drop}
+action in the default chain and empty chains for selected flows.
+
+\subsection{Offloading}
+
+To allow \a{NIC} drivers to offload the subsystem work, a separate \a{API} is
+provided. Through this \a{API}, the driver registers for updates on a table.
+Those will be delivered by invoking callbacks specified in a structure of
+operations. Events will notify the driver of inserted flows and other
+runtime modifications. At the time of registration to a table, the current
+state is completely replayed (not in original order). This asynchronous
+approach is needed to avoid locking the table for driver introspection.
+
+There are two more details which we need to mention before we explain the
+offload in detail. First, tables can be created with a maximum size specified. The
+driver can use this property to allocate resources in advance. However, the
+size can be changed at runtime, but the resize action can result in the offload
+being stopped.
+
+Second, action chains are stored separately from flow matching. When
+a flow is matched, an action chain ID is obtained. The chain ID is then used to
+do another lookup in a hash table of action chains. This allows for two major
+optimizations: identical chains can be merged into one and classification can
+be offloaded separately from action execution.
+
+When a table is created, the driver can check for unknown fields or impossible
+combination of fields, and map the table into the controller pipeline. If the
+driver is rather simple one, it can just map known table types. If on the other
+hand the controller is fully programmable, it knows all the information to
+configure it.
+
+Then, the driver can check the table-wide chains for unknown action primitives or
+impossible action chains. Because of the purpose of the system, the driver can
+be rather strict -- for example, filter tables should contain chains comprised
+of either a \act{drop} action or nothing.
+
+Let us start with the ingress path. There already is a flag
+\field|tc_skip_classify| in the \skb{} structure which indicates that
+the packet was already classified (and acted upon) by the hardware. We plan to
+use this bit (see section \ref{rfc:tc} for better insight into this decision)
+for the same purpose.
+
+The driver configures the card to offload any prefix of the table graph. If the
+graph can be offloaded completely, it can just mark the packet to be skipped and
+call \a{NAPI} to deliver the packet to the networking stack. In the other case,
+the graph was processed just partially and needs to be finished in software. By
+vendor-specific means, the driver should know in which phase the processing was
+interrupted, and therefore know where to continue. For the purpose of partial
+offloading, the \a{API} of the subsystem exposes the executor state
+structure, which should be created accordingly by the driver. Then, the driver
+should call the executor of the subsystem to finish the processing.
+
+The egress part is a bit trickier. The driver can instruct the subsystem to
+completely avoid processing the packet in the software pipeline. This is
+configurable per \netdev. An unprocessed packet is then received by the
+driver. Again, if the table graph can be offloaded completely, no action needs
+to be done in software and the packet can be given directly to the hardware.
+Conversely, when the graph is not offloadable as a whole, the driver must
+run the executor step by step until it can be sure that all reachable tables are
+offloaded. Then it can hand out the packet to the controller.
+
+\section{A note on OpenFlow}
+
+A reader familiar with OpenFlow can notice that the subsystem can serve as
+a backend to implement OpenFlow-compatible software switch. Indeed, this was
+one of the design goals of the subsystem. If the proposed subsystem was
+implemented, one would just need to write a daemon for communication with the
+\a{SDN} controller and translate it into calls of the proposed subsystem
+\a{API}.
+
+\section{Compatibility}
+\label{rfc:tc}
+
+So far, we did not explain when and how is the subsystem going to be inserted
+into the current software pipeline. An obvious answer would be to add another
+hook in there, as close to the hardware as possible (probably under \a{TC}). We
+decided that it is not necessary, and we would rather avoid doing it.
+
+Instead, we propose implementing a classifier for \a{TC}. In the architecture
+of \a{TC}, classifiers are in charge of executing actions, therefore it shall
+be acceptable that our classifier would act on the packet on its own. As for
+the \a{TC} actions, we can prohibit attaching them to our filter.
+
+The model we propose is similar to the \a{BPF} classifier, which is already present
+in the upstream. Also, \a{eBPF} programs can modify the packets as well, so the
+separated action model should not pose a problem for the community.
+
+To further support hardware offloading, we would extend the recently-added
+block mechanism in \a{TC} with a special type of block. The proposed subsystem
+would expose blocks of this type to the \a{TC}, and userspace could attach them
+to \sw{clsact} ingress/egress hooks. As only one block can be hooked there, the
+driver could be sure that the proposed subsystem pipeline is the only
+processing that happens.
+
+Summed up, what we propose is essentially replacing the \sw{clsact} hooks in
+a non-intrusive way. This has the advantage of exposing our own userspace
+\a{API} separate from \a{TC}, while reusing as much in-kernel infrastructure as
+possible without sacrificing any of the goals. For example, we can reuse the
+\fnc|ndo_setup_tc| callback up to the point where blocks are examined.
+
+\iltodo{Review the rest of this section below.}
+
+As the subsystem is very generic, its functionality naturally overlaps with
+some more specific features of the Linux kernel. For example, it can
+theoretically be used instead of \a{RFS}. It is probably not a good idea to do
+so, as the software path would be almost certainly slower and the offloaded
+table more generic than \a{RFS}, making its offload in fact more complicated.
+However, it is up to the driver if it utilizes a part of its hardware pipeline
+to offload \a{RFS} or the proposed subsystem.
+
+For a concrete example, take the Intel Flow Director filters. They can be used
+to offload \a{RFS}, Ethtool Flow Classification, or the subsystem we propose.
+The driver can either make a fixed decision, switch between these offloads
+during compilation, let the user select using driver-specific configuration
+means, or use some heuristics to select the most beneficial offload
+automatically.
+
+One could argue that for generic, low-level packet processing the kernel
+already contains \acrfull{XDP}. However, offloading classification is
+considerably simpler than running arbitrary \a{BPF} program.
+
+\section{Configurable parser}
+\label{rfc:parser}
+
+This whole section is proposed as an optional extension. It can be implemented
+separately and afterwards.
+
+Apart from using the kernel flow-dissector, we would implement our own packet
+parser. The parser graph would be represented as a runtime entity, and thus
+could be modified from userspace. The parser graph could be extended to support
+new header fields or even new protocol headers.
+
+The data structure representing a header field would carry a \fieldfmt{type}.
+Every well-known header field would have its own type, and those types would be
+still extracted by the flow dissector or taken from the \skb{} structure directly.
+Only the fields whose type is ``generic'' would require parsing the packet
+to extract their value.
+
+The parser graph is composed of nodes representing various protocols. We
+call the nodes \emph{headers}. Every header field is contained in exactly one header.
+Headers describe how the parser walks the packets and identifies protocols.
+Header fields describe how to extract a field value from a header instance.
+
+Packet parsing would be similar to table processing. The parser
+starts with a header defined by the link layer protocol -- for us, Ethernet. If there is
+a header field which needs to be extracted from the Ethernet header, it is
+extracted. Then, a mask-value match is performed on predefined fields to
+determine the next header. If no next header matches, the parsing is over.
+
+The predefined parser would be fixed, and it would not be possible to overwrite
+the default rules and header fields. It would be however possible to extend the
+parser with new fields and headers hooked up to places where the processing
+would end previously. This is necessary to avoid changing the definition of
+well-known fields.
+
+If there are no unknown fields allowed in a table, the driver does not need to worry
+about the configurable parser. In the opposite case, the driver can have a look
+on the field header. In the simple case, the field would be just
+a previously-unknown field of a known header. Several controllers feature
+matching on a whole header or arbitrary part of it, enabling offload of those
+fields. In the most complicated case, new parser states would be defined. If
+the controller features a programmable parser, it can program it accordingly.
+
+\section{Introspection}
+
+So far, the system was completely independent of the controllers present in the
+system. In the real world, the user (or userspace software) would probably want
+to know how to arrange the tables to make them most effective. We are proposing
+introspection capabilities, which the userspace could utilize to optimize for
+offloading.
+
+The first challenge to be solved is that devices usually have only
+partially programmable pipeline. For this purpose, the driver would export
+a graph of fixed tables along with \emph{extension points} -- places where
+generic tables could be created.
+
+Next, we have to describe these fixed tables. Throughout the chapter, we complicated
+matters by defining things both generic and static (well-known) -- tables,
+parser states (headers), header fields. Now it comes in handy -- the driver can
+use these values to describe known fields in a compact way. For globally
+unknown but fixed entities, the driver can make use of the generic types.
+
+Next, we have to describe these fixed tables. In common cases, the driver might
+use the well-known table types. Where the table is fixed but not well-known, it
+can be described by the generic table type, for which the usable header fields,
+maximum size, etc. are defined (if applicable).
+
+The hardest difficulty is to describe how much flexibility the user has in
+defining generic entities (configurable parser, generic tables in extension
+points). For headers and header fields, we think that describing the
+configurability is of no use, because if the use case requires matching on
+generic field or whole new protocol header, it probably cannot be avoided.
+On the other hand, a description of the flexibility permitted in table definition could be very
+useful. However, we think that we just cannot cover arbitrary hardware (contemporary
+or future one) accurately enough, unless the description itself is
+Turing-complete. But then it would just be too complex for the purpose.
+
+Instead, we suggest to go similar way the \a{TC} offload used -- enforce
+table offload by a flag. Whenever a table cannot be offloaded by the device,
+the binding of its block should fail. Similarly, when a flow inserted to such
+a table cannot be offloaded, or the table is resized beyond hardware limits, the
+action should fail immediately.
+
+Also, the userspace has the option of querying the device model name and
+version, and looking up the available features in its own database. Such database
+and the model it describes might be much more flexible than that in kernel,
+which needs to be backwards compatible forever.
+
+Note that while mixing offloadable and non-offloadable rules in \a{TC} can
+result in unexpected behavior, the same situation does not happen here. The driver is
+forced to offload a complete prefix (or suffix) of the pipeline -- marking table as forcefully
+offloaded results in transitively enforced offloading of other tables. Say that
+table $T$ is marked with \texttt{skip\_sw} flag. When bound to ingress, the
+driver must offload all tables from which $T$ is reachable. When bound to
+egress, all tables reachable from $T$ must be offloaded.
+
+To support drivers in these operations, the table graph would be maintained
+explicitly with lists of neighbors in both directions. This also allows the
+userspace to look for cycles faster.
+
+\section{Acting as a P4 Backend}
+
+As the subsystem behavior closely follows the current hardware, we can use the existing
+tools for programming the hardware pipelines. The \a{P4} language serves exactly
+this purpose. It allows a system administrator to define the behavior of
+a pipeline in a restricted imperative language. The program can then be compiled
+for a specific hardware pipeline. The compilers can already handle situations
+where pipelines are partially programmable.
+
+We allow for creation of a backend for such compiler. The compiler would
+translate a \a{P4} program to a series of commands (or full state description) that
+would emulate the desired behavior using our subsystem. The compiler could even
+introspect the current hardware and optimize the program for it, resulting in
+a pipeline which is well-offloaded.
+
+\section{Simplifying Overlay}
+
+We admit that the mechanism might be overly generic and flexible. It is however
+necessary to cover all the different hardware designs and prepare for the
+future. The complexity of the system does not prevent us from wrapping it in
+a simple interface -- it would not be possible the other way around.
+
+For example, a ``library'' could be created for drivers. The library could
+serve drivers which are completely inflexible in terms of generic tables and
+parsers. We could select several well-known table types and allow the driver to
+register callbacks for flow insertion/deletion on these. The boilerplate for
+drivers would be reduced to a bare minimum of implementing operations in the spirit
+of ``filter this particular \a{VLAN} ID on this port'' or ``insert an entry
+into FDB''.
+
+Similarly, we could create a library for userspace. The user of the library
+would be abstracted from the complexity of the system, and would work with
+well-known tables only. Those tables could be provided with a sensible
+interface, understanding how to parse and display addresses, ports, constants
+and so on.
+
+\section{Performance}
+
+If we look at the system as a whole, we can say it is an emulator of
+a programmable hardware pipeline. As such, we do not expect it to have
+miraculous performance when run in software. Yet, if we compare it with
+current state of the art, we expect it to be similar to \a{TC} with \sw{flower}
+filters installed. It probably would not be faster than a hand-tuned \sw{u32}
+classifier tree, which can be optimized much further. However, such optimized
+solution is unlikely to be offloaded by any current driver.
+
+Furthermore, we have the advantage of a more restricted behavior, and therefore
+we could utilize some clever algorithms to speed up matching of mask-value
+rules. The tables have the interface of a dictionary, unlike the \a{TC} rules, which are
+a programming language. A dictionary could be optimized into a decision tree
+automatically, while \a{TC} rules must be evaluated strictly in order to
+preserve correctness.
+
+Besides, we expect to solve an existing performance problem -- rule insertion rate.
+Currently, inserting a rule into \a{TC} requires the \struct|rtnl_mutex| to be
+taken. There are ongoing efforts to remove it, but the
+parallelization of previously serial code is a notoriously hard problem. By
+contrast, inserting a flow into a hash-table or a tree could be implemented
+with fine-grained locking or even lockless data structures.
+
+For use cases with maximum required performance, neither our subsystem nor
+\a{TC} is ideal. \a{XDP} serves those purposes much better. However, this holds only for
+static scenarios -- an insertion of a rule into a \a{BPF} program means that the
+program needs to be recompiled and reoptimized, possibly loaded into the
+hardware, all of these being lengthy operations.
+
+When the features of the Linux networking stack are not required, it might be
+even better to employ a kernel-bypassing solution like \a{DPDK}.
+

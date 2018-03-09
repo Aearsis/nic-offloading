@@ -1,0 +1,395 @@
+\chapter{The Demonstrator}
+\label{app:doc}
+
+\iltodo{Review language.}
+
+The attached source code contains an implementation of the subsystem under
+working title Match-Action Tables, MAT for short. In this appendix, we would
+like to document the source code from a high-level point of view. We do not
+discuss implementation details, as they are documented in the source code.
+Also, we do not discuss the functionality itself, as it closely follows the
+model presented in Section \ref{chap:rfc}.
+
+You will not find an implementation of a Linux kernel module in the archive.
+Instead, we created an environment where the implementation looks like if it
+was written as a kernel module -- we could say that the MAT subsystem is
+written against a \emph{mocked} kernel. Most importantly, all of the code
+actually runs in the userspace, even though it simulates a code being run in
+both the kernel mode and the userspace.
+
+The code still uses some headers from Linux, we do not expect it to be
+compilable on other platforms. Due to the targeted audience, we do not expect
+this to be a problem.
+
+\section{Usage}
+
+The source code is written in the C language and follows the GNU99 standard.
+No libraries are required to compile it.
+
+The archive contains a \texttt{Makefile} that should compile all the sources by
+running \texttt{make}. If the compilation was successfull, you can run any of
+the tests from the \texttt{tests} directory. Also, you can run the
+\texttt{test.sh} script that runs all the tests and compares their outputs to
+the expected ones.
+
+The tests usually do some configuration and simulate receiving packets in
+between individual steps. As the subsystem produces debug messages to the
+output, you can see what individual components do. The expected behavior is
+usually printed before running the steps, and documented more extensively in
+the source code.
+
+The sources of the tests are more interesting than their outputs. They show
+the expected userspace interface and the configuration of the subsystem. To
+simulate packet receival, the test code acts both as the userspace and the
+\a{NIC} driver.
+
+\section{Implementation Overview}
+
+\begin{figure}
+	\begin{tikzpicture}[
+			fill=hl, very thin,
+			mod/.style={minimum height=.8cm,minimum width=2.6cm,draw,fill=white,inner xsep=0.5em}
+		]
+		\filldraw (0,0) -- (0, 7.2) -- (7.5, 7.2)
+			-- (7.5, 6) -- (0.5, 6)
+			-- (0.5, 1.2) -- (7.5, 1.2)
+			-- (7.5, 0) -- cycle;
+		\node at (1.5, 6.6) {Test};
+		\node[mod,minimum width=4cm] (tst-netdev) at (4.9, 0.6) {\netdev{} impl.};
+		\node[mod] (tst-nl) at (4.05, 6.6) {setup};
+
+		\filldraw (0.7, 1.4) rectangle (7.5, 3.1);
+		\node at (4.05, 2.7) {Mock kernel};
+		\node[mod] (krn-tc) at (2.2, 2) {TC};
+		\node[mod] (krn-netdev) at (5.6, 2) {netdev iface};
+
+		\filldraw (0.7, 3.6) rectangle (7.5, 5.4);
+		\node at (4.05, 4.55) {Match-Action Tables};
+		\node[mod] (mat-nl) at (4.05, 5.4) {netlink iface};
+		\node[mod] (mat-block) at (2.2, 3.7) {block iface};
+		\node[mod] (mat-netdev) at (5.6, 3.7) {driver iface};
+
+		\draw[very thick] (5.6,1) -- (krn-netdev)
+			(krn-netdev) -- (krn-tc)
+			(krn-tc) -- (mat-block)
+			(krn-netdev) -- (mat-netdev)
+			(mat-nl) -- (tst-nl);
+	\end{tikzpicture}
+	\centering
+	\caption{The components of the demonstration implementation.}
+\end{figure}
+
+At the top level, we can split the implementation to three components. First,
+there is the kernel mock. It defines structures like \skb{} or \netdev{}, but
+also contains bits extracted from the internal API of \a{TC}. Also, we
+extracted the implementation of linked lists and several general-purpose
+macros. To avoid copying the \struct|idr| structure\footnote{Radix tree used to
+allocate and map integer identifiers to objects.} implementation, we simply
+used linearly increasing values and a very simple hashtable/array. Also, we
+implement the kernel dynamic memory allocation routines \fnc|kzalloc| and
+\fnc|kfree| using the \sw{libc} \fnc|calloc| and \fnc|free|, just to make the
+code look like a kernel source code. In contrast, we decided not to implement
+\fnc|printk| to make it obvious that the prints are for demonstration purposes
+only.
+
+Second, there is the implementation of the MAT subsystem. We will describe this
+part in detail in the rest of the appendix. Together with the kernel mock, the
+implementation is linked to a single archive \texttt{libmat.a} to represent
+\emph{the kernel}.
+
+Finally, the archive contains a few test scenarios to demonstrate, how the
+subsystem is expected to be used. As already mentioned, the test scenarios
+interact with the kernel from both userspace and hardware ends. Let us have
+a look at them first.
+
+\subsection{Tests}
+
+There are five tests included:
+
+\begin{description}
+	\item[\texttt{exact}, \texttt{hash}, and \texttt{tcam}] \hfill \\
+		These configure a table of the given type, set the default action chain
+		and insert a rule to drop matching packets. The tests demonstrate how
+		the tables are configured and tests the software implementation of the
+		subsystem.
+
+	\item[\texttt{simple-nic}] \hfill \\
+		This test demonstrates the driver interface and the hardware offload
+		mechanism. The emulated \a{NIC} contains a blacklist 5-tuple filter in
+		its pipeline. The test configures a table which matches on IP addresses
+		and simulate receiving packets. It is demonstrated how the ingress
+		processing is moved to the \a{NIC}.
+
+	\item[\texttt{parser}] \hfill \\
+		This test extends the configurable parser with the \a{VXLAN} header.
+		The parser tree is printed before and after to demonstrate the
+		extension. Then, a simple table is created to show how the driver can
+		read the parser state to offload it.
+
+	\item[\texttt{multi-table}] \hfill \\
+		A chain of tables demonstrating a more complex pipeline is tested.
+		The tables represent a non-optimal firewall and unicast \a{MAC} filter.
+\end{description}
+
+\noindent Please note that having multiple demonstrations of the offload
+mechanism would require to implement all the functionality to simulate the
+hardware processing, duplicating the functionality of the subsystem in the
+tests. As the principles stay the same for other types of tables, we believe
+one demonstration is enough to show the principles of offloading.
+
+\subsection{Match-Action Tables}
+
+\begin{figure}
+	\centering
+	\begin{tikzpicture}[
+			text depth=0.25ex,
+			text height=1.5ex,
+			inner xsep=.5em,
+			module/.style={rectangle,draw,minimum width=2cm,minimum height=1cm,rounded corners=1mm,fill=white},
+			subsys/.style={rectangle,draw,minimum width=1cm,minimum height=1cm,rounded corners=5mm},
+		]
+		\node[module] (table) {table};
+		\node[module] (netlink) [right=of table] {netlink};
+		\node[module] (executor) [below=of table] {executor};
+		\node[module] (tc) [left=of executor] {tc};
+		\node[module] (parser) [above=of table] {parser};
+		\node[module] (tcam) [left=of parser] {tcam};
+		\node[module] (netdev) [left=of table] {netdev};
+		\node[module] (uapi) [above=of netlink] {uAPI headers};
+		\node[subsys] (userspace) [right=of netlink] {userspace};
+		\node[subsys] (drivers) [left=of netdev] {drivers};
+		\node[subsys] (TC) [left=of tc] {TC};
+
+		\draw (tc) -- (executor)
+			(netdev) -- (executor)
+			(netlink) -- (userspace)
+			(netlink) -- (parser)
+			(table) -- (tc)
+			(table) -- (parser)
+			(table) -- (executor)
+			(table) -- (netdev)
+			(table) -- (netlink)
+			(netlink) -- (executor)
+			(TC) -- (tc)
+			(netdev) -- (drivers)
+			(netdev) -- (parser)
+			(parser) -- (tcam);
+
+		\node[module,draw=none,fill=none,right=of executor] {\bf MAT};
+
+		\scoped[on background layer]
+			\node [fill=hl, fit=(tc) (parser) (uapi) (executor)] {};
+	\end{tikzpicture}
+	\caption{The modules of our implementation. Highlighted is the scope of the
+	MAT subsystem. Relations show communicating modules.}
+	\label{fig:modules}
+\end{figure}
+
+The implementation of the subsystem can be split into several modules, as seen
+on Figure \ref{fig:modules}. Not all dependencies are displayed.
+
+The implementation is rather simplified. It is not meant to be
+production-ready, but rather serve as a demonstration of thoughts and
+principles. It should not even be used as a base for the real implementation,
+because some of the things we ignore are hard to add as an afterthought. Most
+notably, we purposefully ignore:
+
+\begin{description}
+	\item[Multithreading and synchronization] \hfill \\
+		As synchronization in the kernel is vastly different from that of
+		user\-space, we decided to omit it completely. This alone should be
+		a reason to write the real implementation from scratch.
+
+	\item[Deconfiguration] \hfill \\
+		To deliver the ideas, it is necessary to support creating the
+		configuration. However, there is a lot of bookkeeping code to support
+		removing or changing the configured entities. We decided to keep
+		things simple for the demonstration.
+
+		Also, when things are not removed, they are usually never deallocated.
+		We believe that the destruction routines are easy to imagine.
+
+	\item[Error paths] \hfill \\
+		As the implementation focuses on the ideas, we consider handling error
+		paths an unnecessary noise. Also, as there are no routines to handle
+		removing things, there is no sensible way how to handle errors.
+
+	\item[Netlink method calling] \hfill \\
+		Where the netlink interface is just a plain call to a function with
+		fixed arguments, we decided to just call the function directly. The
+		netlink interface is designed to be very flexible and binary
+		compatible, but not particularly readable.
+\end{description}
+
+\noindent However, we did not simplified the important things. We strictly separate the
+kernel and userspace memory areas. Data structures can be shared only from the
+userspace to the kernel, not the other way around. Such structures are declared
+in a shared header file, which is separate from the implementation. As already
+said, the header file contains also definitions of functions, which can be
+easily transformed into simple calls over the netlink interface.
+
+The \texttt{netdev} and \texttt{tc} are simple modules serve as brokers to
+communicate with other parts of the kernel. In real-world implementation, these
+would probably get thicker to better separate the implementation from drivers,
+supporting the stability of the \a{kABI}.
+
+\subsubsection{Parser}
+
+The \texttt{parser} module keeps the representation of the packet parser. The
+parser is defined completely as a runtime data structure to allow extensions.
+The module defines two important structures: \struct|mat_parser| and
+\struct|mat_header_field|. Both are identified by globally unique indices.
+
+In the following paragraphs, we use the term ``parser'' for both instances of
+\struct|mat_parser| structure and the parser tree. In fact, the parser tree is
+nothing more than the root parser instance for the Ethernet header.
+
+For every protocol defined, an instance of \struct|mat_parser| is created. The
+parser is used to identify fields from a packet of the corresponding protocol
+and to determine the parser for the next-layer header.
+
+The \struct|mat_header_field| structure instances correspond to individual
+header fields. The structure contains everything that is needed to extract and
+interpret the field value from the byte stream. In case the field is expected
+to be used to match on, it is assigned to a parser.
+
+Every parser (except for the innermost protocols) has two fields by default
+-- \Verb|nexthdr| and \Verb|hdrsize|. The former identifies the field used
+to determine the next-layer parser, the latter to determine the distance to
+next header in bytes.
+
+To define which parser will be used to parse the next header, a mask-value
+match is performed. The rules are stored in an instance of \struct|mat_tcam| structure,
+provided by the \texttt{tcam} module. The structure simulates a \a{TCAM}.
+
+The preconfigured parser identifies some basic fields and shows how to solve
+several challenges. As an example of a challenge, the \emph{Ethertype} field is
+identified by the \a{NIC}s as the Ethertype of the last \a{VLAN} tag, or the
+\a{MAC} header directly if no \a{VLAN} tags are present. As a header field can
+be attached to up to one parser only, we define the Ethertype as a standalone
+parser and make the Ethernet and \a{VLAN} parsers ``look ahead'', out of the
+area that is skipped by parsing them. For illustration, have a look at the
+Figure \ref{fig:ethertype-parser}.
+
+\begin{figure}
+	\begin{tikzpicture}[
+		y = -0.8cm, x=7mm,
+		helper/.style = {
+			font=\scriptsize,
+			draw,
+			inner ysep=1mm,
+			outer sep=0,
+			text depth=0.25ex,
+			text height=1.5ex,
+			minimum width=1.4cm,
+		},
+		field/.style = {
+			helper,
+			fill = yellow!30,
+		}]
+
+		\node[helper] at (0,-1) {\a{MAC}};
+		\node[helper] at (2,-1) {\a{MAC}};
+		\node[helper] at (4,-1) {\texttt{0x8100}};
+		\node[helper] at (6,-1) {VLAN};
+		\node[helper] at (8,-1) {\texttt{0x0800}};
+		\node[helper] at (10,-1) {IP};
+		\node[helper] at (12,-1) {Payload};
+
+		\node[field] at (0,0) {\a{MAC}};
+		\node[field] at (2,0) {\a{MAC}};
+		\node[helper,color=red] (type-1-u) at (4,0) {\texttt{0x8100}};
+
+		\node[helper] (type-1-d) at (4,1) {\texttt{0x8100}};
+		\node[field] at (6,1) {VLAN};
+		\node[helper,color=red] (type-2-u) at (8,1) {\texttt{0x0800}};
+
+		\node[field] (ethertype) at (8,2) {\texttt{0x0800}};
+
+		\node[field] (ip) at (10,3) {IP};
+
+		%\node at (-1, -1) [label=left:Packet data:] {};
+		\node at (-1, 0)  [label=left:Ethernet:] {};
+		\node at (-1, 1)  [label=left:VLAN:] {};
+		\node at (-1, 2)  [label=left:Ethertype:] {};
+		\node at (-1, 3)  [label=left:IP:] {};
+
+		\draw[->] (type-1-u) to (type-1-d);
+		\draw[->] (type-2-u) to (ethertype);
+		\draw[->] (ethertype) to (ip);
+	\end{tikzpicture}
+	\centering
+	\caption{Parsing a \a{VLAN}-tagged packet with the preconfigured parser.
+	Parser states and their scope are in horizontal layers. Look-ahead fields
+	shown in red, identified fields in yellow. Size not to scale.}
+	\label{fig:ethertype-parser}
+\end{figure}
+
+It is important to note that the preconfigured parser tree should never be actually
+used to extract fields. The values of well-known fields are already be extracted
+by the kernel flow dissector and thus present in the \skb. However, the
+definition needs to be precise not to break offload to programmable parsers.
+
+\subsubsection{Table}
+
+The \texttt{table} module stores the configured tables. There are two main
+structures defined: \struct|mat_table| and \struct|mat_flow_key|.
+
+The purpose of \struct|mat_table| structure is to keep all the information
+about a table. Even though it is one of the largest structures in the codebase,
+there is nothing unexpected.
+
+The \struct|mat_flow_key| structure is a pure data carrier for flow keys. Both
+its size and interpretation of contents is dependent on the table, for which the
+flow key is created. Therefore, the flow key is always associated with
+a concrete table, even though it does not carry a pointer to the table.
+
+When a table is created, a mapping of fields to the flow key bits is computed.
+This part solves a Bin packing problem to distribute variable-sized fields to
+the least number of 64-bit \emph{parts} of the flow key. The number of parts is
+then recorded in the table.
+
+As the flow key interpretation depends on the table, it is the \texttt{table}
+module what manipulates it, including filling the flow key with data parsed
+from the packet.
+
+Every table holds its flows and action chains separately. Action chains are
+stored in a hash table, in which chains are identified by a unique 64-bit
+number, \emph{Action ID}. In the future, the ID could be computed from the
+contents of the chain, allowing to merge identical chains into one.
+
+Determining the Action ID varies with the table type. Tables of the \emph{Hash}
+type use the flow hash directly, therefore do not need to store any additional
+data. Other types use different data structures following their purpose.
+
+\subsubsection{Executor}
+
+The software functionality of the subsystem is implemented in the
+\texttt{executor} module. That includes both executing action chains and
+taking the packet through the pipeline of tables.
+
+To allow fine-grained control by the device drivers, which might need to
+continue the operation from multiple places, the module exports its control
+structure, \struct|mat_executor|. The structure contains a state of execution
+as well as a few variables which control the execution.
+
+To start the executor from the beginning, the exported \a{TC} filter
+initializes the structure and calls \fnc|mat_executor_run|. The executor
+then performs all the necessary steps, until a final verdict is returned.
+
+When the driver needs to start the execution from a different point (e.g.\ when
+the hardware classified the packet, but it is not able to execute the actions),
+the driver initializes the \struct|mat_executor| structure, fills the known
+information and uses the structure to ``restore'' the execution in software.
+
+The \struct|mat_executor| structure holds a \a{TTL} number. With every step
+executed, the \a{TTL} is decreased. When the \a{TTL} drops to zero, the
+execution is terminated with a special result code.
+
+When the \a{NIC} partially offloads the egress path, the driver has to run the
+executor for any prefix of the table graph, such that the remaining suffix is
+offloaded. The driver can either precompute the \a{TTL} to make the executor
+stop at the right time, or just run the execution step-by-step.
+
+The \a{TTL} field also protects from being caught in an infinite loop when the
+subsystem is configured wrong.

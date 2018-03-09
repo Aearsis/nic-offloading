@@ -1,0 +1,188 @@
+\section{Intel 82599 10 Gigabit Ethernet Controller}
+\label{nic:82599}
+\renewcommand{\sect}[1]{\cite[#1]{82599}}
+
+This controller was released in mid-2016 and since then, it was embedded into
+many adapters from different vendors -- Intel, HP, Dell, and others. The
+controller supports Ethernet speeds of 10 Gbps. It is connected to the host
+through 8 lanes of \a{PCIe} 2.0. To the network, it can be connected through
+2 independent interfaces. Compared to its older sibling, 82598, it supports
+\a{LRO} and \a{SR-IOV} among other improvements,
+
+Its full specification \cite{82599} is publicly available for download from the
+vendor web portal. The specification covers both the supported features and their
+configuration interface for the controller driver. Unless otherwise specified,
+the information in this chapter is sourced from there.
+
+In the Linux kernel, the driver responsible for this controller is called
+\sw{ixgbe}. It is in the upstream since 2007, introduced by commit
+\linuxcommit{9a799d71}.
+
+\subsection{Checksum Offload}
+
+The controller supports calculation of the \a{IP} and \a{TCP}/\a{UDP}
+checksums. However, the pseudo-header checksum must be computed by the software. The
+support is not generic, as the controller always inserts the checksum at offset
+6 (\a{UDP}) or 16 (\a{TCP}) bytes from the beginning of the transport layer packet.
+The offset to the transport layer packet is configurable though, so the driver
+could exploit this to emulate the generic mode \sect{7.2.5}. The Linux driver
+does not do so. \a{SCTP} CRC32 computation and validation is supported as well.
+
+On the receive side, the controller supports \a{IP} and \a{TCP}/\a{UDP}
+checksum validation only for bare \a{TCP} or \a{UDP} over \a{IP} packets, no
+tunnels are supported \sect{7.1.11}.
+
+\subsection{Segmentation Offload}
+
+The controller supports \a{TCP} and \a{UDP} segmentation for transmission. However, the
+\a{UDP} segmentation is not implemented as \a{IP} fragmentation of
+a single datagram, but as splitting of the \a{UDP} datagram into more datagrams.
+The maximum size of a packet to be segmented is 256 KB. No advanced tunnelling can
+be involved, the engine can handle only up to two VLAN headers.
+
+\acrfull{RSC}, which is Intel's name for \a{LRO}, dynamically keeps at most
+32 flow contexts per port, and coalesces \a{TCP} segments of those flows.
+\a{RSC} can be turned off and on individually for every receive queue.
+Interestingly, the controller is unable to coalesce \a{TCP} segments transmitted
+over \a{IPv6} (while it supports their transmit segmentation).
+
+\subsection{Multiple Receive Queues}
+
+There can be as many as 128 receive queues configured. The majority of the receive
+pipeline is dedicated to queue selection \sect{7.1.2}. First, hardware
+switching is performed, and a \emph{queue pool} is selected. From there, the
+packed is examined by a variety of filters, which can select a concrete queue
+in the pool. In terms of configurability of the pipeline, the controller behaves
+differently when \emph{Virtualization} is enabled. In this context, Virtualization
+refers to a mode where multiple software entities receive packets through the
+controller, and the controller offers additional features to support the use
+case. Otherwise, the available queues can be used to improve
+single-host performance.
+
+Let us first explore the pipeline when Virtualization is disabled. No switching
+is performed, as all received packets are received by one operating system.
+The whole mechanism is devoted to selecting one of the 128
+queues available. It is up to the software how it will assign the queues, yet
+few limitations exist, as we will see at the end of the pipeline.
+
+The pipeline is constructed to consult a fixed sequence of tables.
+Every table can either hit the packet and select a queue index, or miss the
+packet. The first table that hits the packet determines the final queue  number. At the
+end of the pipeline, there is a \a{DCB}\footnote{\acrlong{DCB}} and \a{RSS} ``filter'', which hits
+every packet and determines the queue if it was not determined by the previous
+filters already.
+
+\a{RSS} and \a{DCB} might not cover all the queues available. In that case,
+the driver can offload classification of packets and use the free queues to
+return the classification result.
+
+Let us walk through the individual tables in the pipeline.
+\begin{description}
+	\item[L2 Ethertype filter] \hfill \\
+		Intended to steer packets of a specific ethertype to
+		a particular queue. An example use case is an early classification of
+		\a{LLDP} or \a{IEEE} 802.1X packets. This filter table is
+		also used to mark the packet for other offloads (\a{FCoE}, \a{IEEE}~1588).
+	\item[FCoE Redirection Table] \hfill \\
+		Used to manually assign a queue based on 3 least significant bits of
+		the Fibre Channel Originator/Responder Exchange ID. As those IDs can be
+		assigned uniformly, the table can serve as a \a{FCoE}-specific \a{RSS}.
+	\item[L3/L4 5-tuple Filters] \hfill \\
+		These rules match on any subset of the transport layer protocol, the source
+		and destination \a{IPv4} addresses and the transport-layer port used.
+		Unfortunately, the fields can match only concrete values and not
+		e.g.\ network prefix of an address. The filter is useful to steer specific
+		flows to a dedicated queue. There can be at most 128 such filters.
+	\item[SYN Packet Filter] \hfill \\
+		\a{TCP} packets with the \texttt{SYN} flag can be steered into
+		a dedicated queue to mitigate \texttt{SYN} flood attacks.
+	\item[Flow Director Filters] \hfill \\
+		\label{sec:82599-fdir}%
+		An advanced flow classifier. Apart from selecting the receive queue,
+		the packet is marked with a tag configurable by software. Flows can be
+		matched either exactly (max. 8 K filters) or by hashing the input
+		values (max. 32 K filters). Matching is available for the VLAN tag, the
+		\a{IP} version, the source and destination \a{IP} addresses, the
+		transport-layer protocol, and the source and destination ports.
+		Furthermore, the filter can
+		match on any 2 bytes in the first 45 bytes of the packet (offset
+		defined globally).
+
+		The matched flows can be dropped. The dropped flows can be either actually
+		dropped or just redirected to a dedicated queue. The matched flows can also
+		be tagged with a 15-bit software-selected unique identifier.
+
+		The amount of memory dedicated for Flow Director filters is
+		configurable. The memory is shared with the receive buffer for packets.
+\end{description}
+
+When none of the previous filters matched and selected the receive queue, \a{DCB}
+and \a{RSS} takes place depending on the configuration. When the \a{DCB} mode
+is enabled, it extracts the 2 or 3-bits of the \a{PCP} field from the \a{VLAN}
+header (\a{DCB} assumes all packets are \a{VLAN} tagged) to select
+a \emph{Traffic Class Index}. \a{RSS} computes the flow hash by a fixed
+algorithm (with configurable random key) and selects a configurable number of
+least-significant bits to compute an \emph{\a{RSS} Index}. Those two indices are
+then used to compute a queue index. The software should refrain from using queues
+assignable by this algorithm for filter targets.
+
+When Virtualization is enabled, the queues are distributed evenly among queue
+pools, with high-order bits of the queue index defining the target pool.
+Virtualization in this context does not necessarily mean only \a{SR-IOV} -- the
+controller allows a different mode called \acrfull{VMDq}, which can be seen as
+switching performed only to select the high-order bits of the receive
+queue. This mode is intended to be used along with a software switch, which can
+use the classification information. In the \a{SR-IOV} mode, queue pools
+correspond to virtual functions.
+
+The inner switch does not learn. Instead, it consults a multitude of tables to
+fill the target pool list. Among others, it consults the destination \a{MAC}
+address with respect to unicast, multicast and broadcast tables separately.
+
+The switch operates in one of two modes -- with replication enabled or
+disabled. Replication allows to copy the received packet to multiple queue
+pools at once. If replication is disabled, the software is responsible for
+distributing packets among multiple targets, because the packet will be
+received by one queue only. In this mode, the inner switch is used purely for
+classification. When replication is enabled, the software can configure
+which pools will receive broadcasts, which multicasts and so on. This mode is
+better suited for use with \a{SR-IOV}.
+
+\subsection{Multiple Transmit Queues}
+
+For transmission, the controller also opens 128 queues. However, not all of
+them are scheduled in every configuration. Depending on the use of Virtualization
+and \a{DCB}, only 64 queues might be dequeued.
+
+Either way, two scheduling phases are performed. First, the packets are
+dequeued from the 128 queues to at most 8 packet buffers. Then, the packets are
+taken out from the buffers and sent to the \a{MAC} for transmission.
+
+Queues are distributed between queue pools (virtual functions) and traffic
+classes. When there are multiple queues dedicated to one traffic class inside
+a pool, they are always dequeued in a frame-by-frame round-robin order. Queues
+are distributed between classes to reflect class priority 
+(high-priority classes have fewer queues than low-priority classes, because less
+traffic is expected to be buffered.)
+
+The scheduling algorithms differ for every mode of operation, and their
+description here would be a mere copy of \cite{82599}, section 7.2.1, and
+therefore is omitted.
+
+From the offloading point of view, in majority of modes the controller employs
+a weighted-strict-order scheduling of different traffic classes. This fact
+could be used to offload priority scheduler with an appropriate number of bands.
+
+\subsection{Other offloads}
+
+Apart from the classification offloads mentioned, the controller features two
+security offloads: LinkSec (MACsec) and IPSec. For both of them, the software
+must establish the Security Associations itself, and then install them to the
+hardware tables. The hardware is capable of offloading AES-128. Both
+authentication and encryption is supported, provided they are using the same
+\a{SA} (IPSec only). LinkSec can also be configured from the management
+controller. \sect{7.8 and 7.12}
+
+Another inline functionality that is emphasized in the specification is the
+\a{FCoE} support. The controller offers additional functions like Fibre
+Channel \a{CRC} computation or \a{FCoE} segmentation. \sect{7.13}

@@ -33,18 +33,18 @@
 
 %%% Macros for definitions, theorems, claims, examples, ... (requires amsthm package)
 
-\theoremstyle{plain}
-\newtheorem{thm}{Theorem}
-\newtheorem{lemma}[thm]{Lemma}
-\newtheorem{claim}[thm]{Claim}
-
-\theoremstyle{plain}
-\newtheorem{defn}{Definition}
-
-\theoremstyle{remark}
-\newtheorem*{cor}{Corollary}
-\newtheorem*{rem}{Remark}
-\newtheorem*{example}{Example}
+%\theoremstyle{plain}
+%\newtheorem{thm}{Theorem}
+%\newtheorem{lemma}[thm]{Lemma}
+%\newtheorem{claim}[thm]{Claim}
+%
+%\theoremstyle{plain}
+%\newtheorem{defn}{Definition}
+%
+%\theoremstyle{remark}
+%\newtheorem*{cor}{Corollary}
+%\newtheorem*{rem}{Remark}
+%\newtheorem*{example}{Example}
 
 %%% An environment for proofs
 
@@ -60,28 +60,50 @@
 %%% of programs. (Requires the fancyvrb package -- fancy verbatim.)
 
 \DefineVerbatimEnvironment{code}{Verbatim}{fontsize=\small, frame=single}
+\DefineVerbatimEnvironment{shell}{Verbatim}{fontsize=\small, numbers=left,numbersep=3mm,frame=single, framesep=2ex}
 
 %%% The field of all real and natural numbers
 \newcommand{\R}{\mathbb{R}}
 \newcommand{\N}{\mathbb{N}}
 
-%%% Useful operators for statistics and probability
-\DeclareMathOperator{\pr}{\textsf{P}}
-\DeclareMathOperator{\E}{\textsf{E}\,}
-\DeclareMathOperator{\var}{\textrm{var}}
-\DeclareMathOperator{\sd}{\textrm{sd}}
-
-%%% Transposition of a vector/matrix
-\newcommand{\T}[1]{#1^\top}
-
 %%% Various math goodies
-\newcommand{\goto}{\rightarrow}
-\newcommand{\gotop}{\stackrel{P}{\longrightarrow}}
-\newcommand{\maon}[1]{o(n^{#1})}
-\newcommand{\abs}[1]{\left|{#1}\right|}
-\newcommand{\dint}{\int_0^\tau\!\!\int_0^\tau}
-\newcommand{\isqr}[1]{\frac{1}{\sqrt{#1}}}
+\newcommand{\cdotop}{\mathop{\cdot}}
 
-%%% Various table goodies
-\newcommand{\pulrad}[1]{\raisebox{1.5ex}[0pt]{#1}}
-\newcommand{\mc}[1]{\multicolumn{1}{c}{#1}}
+%%% Code snippets
+\CustomVerbatimCommand{\macro}{Verb}{formatcom=\color{darkgreen},fontfamily=lmtt}
+\CustomVerbatimCommand{\fnc}{Verb}{formatcom=\color{darkblue},fontfamily=lmtt}
+\CustomVerbatimCommand{\struct}{Verb}{formatcom=\color{darkred},fontfamily=lmtt}
+\CustomVerbatimCommand{\field}{Verb}{formatcom=\color{darkred},fontfamily=lmtt}
+
+\newcommand{\macrofmt}[1]{\textcolor{darkgreen}{\texttt{#1}}}
+\newcommand{\fncfmt}[1]{\textcolor{darkblue}{\texttt{#1}}}
+\newcommand{\structfmt}[1]{\textcolor{darkred}{\texttt{#1}}}
+\let\fieldfmt\structfmt
+
+\newcommand{\cmd}[1]{\texttt{#1}}
+\newcommand{\sw}[1]{\texttt{#1}}
+
+\newcommand{\netdev}{\structfmt{net\_device}}
+\newcommand{\skb}{\structfmt{sk\_buff}}
+
+\newcommand{\kernelcommit}[2]{\href{https://git.kernel.org/pub/scm/linux/kernel/git/#1.git/commit/?id=#2}{#2}}
+\newcommand{\kerneltag}[2]{\href{https://git.kernel.org/pub/scm/linux/kernel/git/#1.git/commit/?h=#2}{#2}}
+
+\newcommand{\linuxcommit}[1]{\kernelcommit{torvalds/linux}{#1}}
+\newcommand{\netnextcommit}[1]{\kernelcommit{davem/net-next}{#1}}
+
+\newcommand{\linuxtag}[1]{\kerneltag{torvalds/linux}{#1}}
+
+\newcommand{\linuxfile}[1]{\href{https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/#1?h=v4.16}{\texttt{#1}}}
+
+% \linuxfnc{file}{line}{fnc}
+\newcommand{\linuxfnc}[3]{\href{https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/#1?h=v4.16\#n#2}{\fncfmt{#3}\footnote{Linux kernel \cite{linux-kernel}, file \texttt{#1}, line #2}}}
+
+% \linuxstruct{file}{line}{struct}
+\newcommand{\linuxstruct}[3]{\href{https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/#1?h=v4.16\#n#2}{\structfmt{#3}\footnote{Linux kernel \cite{linux-kernel}, file \texttt{#1}, line #2}}}
+
+% \ethtoolfile{file}{line}{label}
+\newcommand{\ethtoolfile}[3]{\href{https://git.kernel.org/pub/scm/network/ethtool/ethtool.git/tree/#1?h=v4.16\#n#2}{\texttt{#3}}}
+
+\newcommand{\iltodo}[1]{\todo[inline]{#1}}
+

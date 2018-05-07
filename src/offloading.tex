@@ -27,9 +27,9 @@ high-level principles described in this chapter are implemented by multiple
 \a{NIC} vendors.
 
 An important aspect of an offload is that the functionality provided by
-the hardware is not required for frames to be processed. The functionality is
+the hardware is not required for packets to be processed. The functionality is
 strictly opt-in and only if the driver of the device is capable of doing so, it
-can enable it and benefit from skipping some steps in the network frame
+can enable it and benefit from skipping some steps in the network packet
 processing on the host.
 
 At first, we would like to mention two techniques that can be
@@ -37,8 +37,8 @@ classified as offloads, though this requires a rather loose interpretation of th
 term. First is the scatter-gather capability of the controller, which frees the
 host from assembling multiple buffers into one. Second is the interrupt
 moderation, which reduces the overhead of switching contexts and allows to
-batch-process multiple frames. Both of these techniques save some CPU cycles to
-process a frame, but they do not depend on the frame content.
+batch-process multiple packets. Both of these techniques save some CPU cycles to
+process a packet, but they do not depend on the packet content.
 
 \section{Checksum Offload}
 
@@ -137,7 +137,7 @@ tunnel types.
 The receiving counterpart of \a{LSO} is usually called \acrfull{LRO} and
 does the expected opposite. Prior to enqueueing the packet into the receive
 queue of the operating system, it tries to coalesce multiple received segments
-belonging to one \a{TCP} stream into one super-frame. It is important to make
+belonging to one \a{TCP} stream into one super-packet. It is important to make
 this feature optional, because it would violate the responsibilities of a network
 when the packet is bridged or routed in the software.
 
@@ -209,16 +209,16 @@ queues can help in more cases than only on multi-processor systems.
 
 Let us start with increasing the number of egress queues per port. To handle
 multiple queues, the controller must multiplex them on the wire. The algorithm for
-multiplexing frames from multiple queues in fact performs frame scheduling.
+multiplexing packets from multiple queues in fact performs packet scheduling.
 
 With the knowledge of the scheduling algorithm, the host can offload scheduling
-to the \a{NIC} by selecting the proper queue for every frame. This requires
+to the \a{NIC} by selecting the proper queue for every packet. This requires
 both the algorithm and the number of queues to be compatible with the desired
 behavior.
 
 We will show two examples of how multiple queues can be used. In the first one, assume that
 the scheduling algorithm is round-robin, thus every queue is treated equally
-(with respect to the number of frames, not bytes sent). In a sense, the host can
+(with respect to the number of packets, not bytes sent). In a sense, the host can
 treat every queue as a separate interface to a shared medium. On
 a multiprocessor system, it is possible to dedicate one queue to every core,
 offloading the synchronization between the cores to the \a{NIC}. The downside of
@@ -231,7 +231,7 @@ model, the host can differentiate several traffic classes (e.g.\ prioritize
 interactive traffic before bulk traffic) and distribute them among egress
 queues appropriately. This technique can cut a bit of latency introduced by
 buffering in the hardware queues of the device. Some scheduling still needs to
-be done in the software, as there can be multiple sources of frames which
+be done in the software, as there can be multiple sources of packets which
 need to be multiplexed into one queue.
 
 Scheduling offload is very hard to adopt, because subtle differences between
@@ -249,7 +249,7 @@ equally among the queues in a set.
 \subsection{Multiple Receive Queues}
 
 Multiple ingress queues can be utilized quite
-easily. The controller has to distribute the frames received from the wire to
+easily. The controller has to distribute the packets received from the wire to
 the queues and the selection of algorithm the to do so creates space for offloads.
 
 \subsubsection{Receive-Side Scaling}
@@ -258,8 +258,8 @@ To take advantage of multiple processors available for processing
 network traffic, a simple mechanism called \emph{Receive-Side Scaling} was
 specified by Microsoft in the Network Driver Interface Specification \cite{NDIS}.
 
-The idea is that similarly processed frames should be handled by the same
-\a{CPU} to maximize the benefits of caching. Also, frames from a single flow are
+The idea is that similarly processed packets should be handled by the same
+\a{CPU} to maximize the benefits of caching. Also, packets from a single flow are
 likely to be processed similarly. Therefore, an \a{RSS}-enabled \a{NIC}
 extracts the source and destination addresses, possibly also the \a{TCP}/\a{UDP}
 source and destination ports, and calculates a hash function of those. The lower
@@ -272,9 +272,9 @@ exist and as an inspiration for all other multi-queue offloads.
 
 \subsubsection{Differentiated Services}
 
-Instead of merely distributing frames in a stochastic manner, the queues can be
+Instead of merely distributing packets in a stochastic manner, the queues can be
 assigned a specific purpose. Every \a{IP} packet carries a priority field,
-which can be used to assign a traffic class to every frame. The field is called
+which can be used to assign a traffic class to every packet. The field is called
 \acrfull{TOS} in \a{IPv4} and Traffic Class in \a{IPv6}. Traffic classes can
 then be mapped to receive queues by the \a{NIC}. Knowledge of the priority
 mapping then allows the software stack to handle certain traffic classes with higher
@@ -453,7 +453,7 @@ under \a{DoS} attack. Incoming requests undergo accounting that can consider
 arbitrary properties of the request (source address, subnet, or even
 some domain-specific properties like the \a{API} key being used). Flows
 exceeding the configured rate are considered malicious and a rule dropping the
-frames of this particular flow is installed to the hardware. From now on, the traffic from the
+packets of this particular flow is installed to the hardware. From now on, the traffic from the
 attackers can no longer disrupt the service, because the packets are dropped
 before reaching the first software component.
 
@@ -550,11 +550,11 @@ the flow (see Section \ref{mlx:pipeline}).
 % One of the software switches being deployed is Open vSwitch. The software
 % system consists of a userspace daemon and a kernel module. The kernel module
 % serves as a dumb forwarder, which forwards according to its \acrfull{FDB}. The
-% kernel module however does not learn -- frames which are unknown to the \a{FDB}
+% kernel module however does not learn -- packets which are unknown to the \a{FDB}
 % are trapped up to the userspace daemon. The daemon can be arbitrarily complex,
 % because it runs in userspace. After the daemon decides what to do with the
-% frame, it can install a flow into the kernel -- insert an entry into the
-% \a{FDB}. From now on, the frames belonging to the flow are forwarded by the
+% packet, it can install a flow into the kernel -- insert an entry into the
+% \a{FDB}. From now on, the packets belonging to the flow are forwarded by the
 % simple algorithm in kernel, which is faster.
 %
 % This model is not specific to software switches, actually, it was used in
@@ -572,7 +572,7 @@ the flow (see Section \ref{mlx:pipeline}).
 % Still, we have not mentioned how this relates to offloading -- everything was
 % purely about software yet. The thing is that switch controllers (such as in
 % Mellanox Spectrum) might offer an interface, through which the software can
-% install flows directly into the hardware, and the frames can be then forwarded
+% install flows directly into the hardware, and the packets can be then forwarded
 % without software intervention. As the resources in hardware are limited, the
 % kernel module must be preserved to handle excess flows. One can say that the
 % hardware is a data plane for which the kernel serves as a control plane. The

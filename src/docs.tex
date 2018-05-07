@@ -72,7 +72,7 @@ simulate packet receival, the test code acts both as the userspace and the
 			(mat-nl) -- (tst-nl);
 	\end{tikzpicture}
 	\centering
-	\caption{The components of the demonstration implementation.}
+	\caption[Components of the demonstrator]{The components of the demonstration implementation.}
 	\label{fig:mat-comps}
 \end{figure}
 
@@ -179,7 +179,7 @@ one demonstration is enough to show the principles of offloading.
 		\scoped[on background layer]
 			\node [fill=hl, fit=(tc) (parser) (uapi) (executor)] {};
 	\end{tikzpicture}
-	\caption{The modules of our implementation. Highlighted is the scope of the
+	\caption[Modules of the demonstrator]{The modules of our implementation. Highlighted is the scope of the
 	MAT subsystem. Relations show communicating modules.}
 	\label{fig:modules}
 \end{figure}
@@ -319,7 +319,7 @@ Figure \ref{fig:ethertype-parser}.
 		\draw[->] (ethertype) to (ip);
 	\end{tikzpicture}
 	\centering
-	\caption{Parsing a \a{VLAN}-tagged packet with the preconfigured parser.
+	\caption[An example of packet parsing]{Parsing a \a{VLAN}-tagged packet with the preconfigured parser.
 	Parser states and their scope are in horizontal layers. Look-ahead fields
 	shown in red, identified fields in yellow. Size not to scale.}
 	\label{fig:ethertype-parser}

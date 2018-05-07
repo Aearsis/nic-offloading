@@ -7,7 +7,7 @@ many adapters from different vendors -- Intel, HP, Dell, and others. The
 controller supports Ethernet speeds of 10 Gbps. It is connected to the host
 through 8 lanes of \a{PCIe} 2.0. To the network, it can be connected through
 2 independent interfaces. Compared to its older sibling, 82598, it supports
-\a{LRO} and \a{SR-IOV} among other improvements,
+\a{LRO} and \a{SR-IOV} (among other improvements).
 
 Its full specification \cite{82599} is publicly available for download from the
 vendor web portal. The specification covers both the supported features and their
@@ -15,8 +15,8 @@ configuration interface for the controller driver. Unless otherwise specified,
 the information in this chapter is sourced from there.
 
 In the Linux kernel, the driver responsible for this controller is called
-\sw{ixgbe}. It is in the upstream since 2007, introduced by commit
-\linuxcommit{9a799d71}.
+\sw{ixgbe}.
+%It is in the upstream since 2007, introduced by commit \linuxcommit{9a799d71}.
 
 \subsection{Checksum Offload}
 
@@ -116,7 +116,7 @@ Let us walk through the individual tables in the pipeline.
 		configurable. The memory is shared with the receive buffer for packets.
 \end{description}
 
-When none of the previous filters matched and selected the receive queue, \a{DCB}
+\noindent When none of the previous filters matched and selected the receive queue, \a{DCB}
 and \a{RSS} takes place depending on the configuration. When the \a{DCB} mode
 is enabled, it extracts the 2 or 3-bits of the \a{PCP} field from the \a{VLAN}
 header (\a{DCB} assumes all packets are \a{VLAN} tagged) to select
@@ -178,10 +178,9 @@ could be used to offload priority scheduler with an appropriate number of bands.
 Apart from the classification offloads mentioned, the controller features two
 security offloads: LinkSec (MACsec) and IPSec. For both of them, the software
 must establish the Security Associations itself, and then install them to the
-hardware tables. The hardware is capable of offloading AES-128. Both
+hardware tables. The controller is capable of offloading AES-128. Both
 authentication and encryption is supported, provided they are using the same
-\a{SA} (IPSec only). LinkSec can also be configured from the management
-controller. \sect{7.8 and 7.12}
+\a{SA} (IPSec only). \sect{7.8 and 7.12}
 
 Another inline functionality that is emphasized in the specification is the
 \a{FCoE} support. The controller offers additional functions like Fibre

@@ -5,7 +5,7 @@
 As the last examined controller, we have chosen Netronome NFP-6000. The design
 of the NFP controller series is presumably completely different from other
 vendors. Instead of being a highly specialized packet processing silicon, the
-controller is a generic programmable compute unit with features for packet
+controller is a programmable parallel compute unit with features for packet
 processing and network connectivity. The Netronome controllers NFP-4000 and
 NFP-6000 share the same architecture, but differ in the number of functional
 units used.
@@ -20,7 +20,7 @@ to four CPU sockets in one host. They can handle up to four 100 Gbps Ethernet
 interfaces, with both integrated \a{MAC} or a transmitter connected via SFP+,
 QSPF or CXP.
 
-All controllers are composed from so-called islands, which have isolated
+The controller is composed from so-called islands, which have isolated
 responsibilities. Most of the islands are connected with a bus, which can
 exchange data between them. The architecture is modular, allowing to create
 different versions of the same controller design.
@@ -53,7 +53,7 @@ The islands include:
 		memory and metadata are passed to Flow Processing islands.
 \end{description}
 
-An important building block is a \acrfull{FPC}, which is a programmable 32-bit
+\noindent An important building block is a \acrfull{FPC}, which is a programmable 32-bit
 processor core designed for packet processing. The core runs up to 8 threads,
 which are cooperatively scheduled when waiting for data, similarly to threads
 on \a{GPU}s.
@@ -85,7 +85,7 @@ assume that the controller fits well into any reasonable offload model.
 
 Taken to the extreme, the controller is capable of running Open vSwitch by
 itself, on the \a{ARM} processor, offloading the heavy lifting to the \a{FPC}s.
-Both without the host intervention. Still, the ports of the virtual switch
+Both without the host intervention. The ports of the virtual switch still
 correspond to individual network interfaces presented to the host, creating
 a very unusual scenario of a separate machine running Open vSwitch, connected
 via PCIe to the host.

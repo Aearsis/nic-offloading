@@ -65,7 +65,8 @@ following goals:
 		not be extremely expensive, when it comes to performance.
 \end{itemize}
 
-\noindent The key idea is to replace \a{TC} in the offloading to match-action pipeline,
+\noindent The key idea is to replace the \a{TC} role in the \a{ACL}, flow, and
+match-action pipeline offloading,
 without actually replacing \a{TC}. This proposal cannot be considered final and
 will be a subject to discussion at the networking mailing lists before a patch
 will be created. Also, it is not meant as ``all or nothing'' -- we present many
@@ -73,7 +74,7 @@ ideas from which only a subset might be implemented in the end.
 
 \iltodo{Review language above.}
 
-\section{The big picture}
+\section{The Big Picture}
 
 The proposed subsystem is well separated -- it is not a module of
 \a{TC} or netfilter, but rather a completely standalone entity. It has its
@@ -84,9 +85,8 @@ The subsystem information base is stored per network namespace. In other
 words, entities created from inside a namespace are visible for all network devices
 inside that namespace. This way, we allow drivers to allocate resources once and
 share them between multiple \netdev s of the same controller. This decision
-is supported by recent work in upstream to allow sharing of \a{TC} classifier
-blocks between \netdev s, which works around a design limitation of \a{TC}, because
-resources we are talking about are quite limited.
+is supported by implementation of shared blocks in \a{TC}, as mentioned in
+Section \ref{sec:tc-shared-blocks}.
 
 The subsystem has a userspace configuration utility and a kernel module.
 The utility is a part of the \texttt{iproute2} package, and follows
@@ -104,19 +104,19 @@ entities of the proposed subsystem, unless specified otherwise.
 
 From the top level view, \emph{tables} form a directed graph. It
 is prohibited to create cycles, but it is not checked by the kernel
-module. There are several predefined types of \emph{tables}, but their
+module. There are several predefined types of tables, but their
 behavior is not different from the ``generic'' type from the point of
 view of the module. The purpose of type is to restrict the model in order to
-allow offloading for simpler devices.
+ease offloading for simpler devices.
 
 Similarly, there is a preconfigured parser of several known \emph{header fields}
 (\a{MAC} addresses, Ethertype, \a{VLAN} tag, \a{IP} addresses, \a{TOS}, ports,
 \dots). The parser tree provides a standalone
 description of the packet header types and fields that can be extracted from them. This
 parser is extensible by generic \emph{header fields} at runtime to support
-custom protocols. A detailed description follows in section \ref{rfc:parser}.
+custom protocols. A detailed description follows in Section~\ref{rfc:parser}.
 
-When a \emph{table} is created, the set of \emph{header fields} it uses is
+When a table is created, the set of header fields it uses is
 defined. This set is fixed and cannot be changed later. If the table is of one
 of the known types, the set of usable fields is restricted to a predefined
 subset. For example, a table of known table type ``\a{IP} 5-tuple filter''
@@ -126,7 +126,7 @@ can use any subset of all the defined header fields.
 
 Together with the header fields, a parser for the table has to be declared at
 creation time. We expect that for most of the time, the default Ethernet parser
-is used.
+will be used.
 
 We call the table entries \emph{flows}. The system is expected
 to be continuously modified by inserting and deleting flows from tables. Every
@@ -151,14 +151,20 @@ flow has an individual chain of \emph{actions} assigned.
 		\node at (4.5, -0.5) {\vdots};
 		\node at (6.5, -0.5) {\vdots};
 		\node at (1.5, 2.5) {\dots};
-		\node at (4.5, 2.5) {Header fields};
+		\node at (4.5, 2.5) {\dots};
 		\node at (6.5, 2.5) {\dots};
 		\node at (1.5, 1.5) {\dots};
-		\node at (4.5, 1.5) {Flows};
+		\node at (4.5, 1.5) {\dots};
 		\node at (6.5, 1.5) {\dots};
 		\node at (1.5, .5) {\dots};
 		\node at (4.5, .5) {\dots};
 		\node at (6.5, .5) {\dots};
+
+		\draw[decoration={brace,amplitude=3mm},decorate,very thin] (0,3) -- (7,3);
+		\draw[decoration={brace,amplitude=3mm},decorate,very thin] (0,-1) -- (0,2);
+
+		\node at (3.5, 4) {Header fields};
+		\node[rotate=90] at (-.6, .5) {Flows};
 
 		\node[circle,inner sep=0.7mm,draw] at (7.5, 1.5) {};
 		\node[circle,inner sep=0.7mm,draw] (ac1) at (7.5, 0.5) {};
@@ -180,9 +186,9 @@ flow has an individual chain of \emph{actions} assigned.
 
 Now we can finally explain what the main processing looks like: Say that
 the subsystem is called to process a packet using table $T$. The header fields
-which $T$ uses are extracted from the packet using the parser of $T$, and are
+that $T$ uses are extracted from the packet using the parser of $T$, and are
 joined to create a \emph{flow key}. The flow key is used to search the table
-and identify a \emph{flow}. Whenever a flow is identified, a sequence of
+and identify a \emph{flow}. When the flow is identified, a sequence of
 \emph{actions} is executed. If \emph{next table} was set while $T$ was processed,
 the processing repeats with the next table.
 
@@ -206,7 +212,7 @@ bits specified by the flow.
 \end{description}
 
 In the hashed mode, we do not specify the hash function to be used. The mode
-serves as a hint for hardware that it can afford collisions. In fact, the exact
+serves as a hint for the hardware that it can afford collisions. In fact, the exact
 mode can be implemented with hash tables as well.
 
 \subsection{Actions}
@@ -220,7 +226,7 @@ the post-chain.
 
 Any action chain can be changed at runtime. Modifying a chain can result in
 change of table offload status -- either it can enable offloading of the previously
-not-offloaded table (or flow) or vice versa.
+not-offloaded table or vice versa.
 
 An action chain is composed of primitive actions. The set of available
 primitive actions is specified by the subsystem and generally is not
@@ -260,15 +266,15 @@ Even though the action system is simplified, we could extend it with
 conditionals and create a really flexible system. On the other hand, the
 purpose of the subsystem is to create better offloading opportunities, and more
 complicated packet-processing code should be implemented with different
-technologies (\a{XDP}, \a{BPF}, custom firmware, ...).
+technologies (\a{XDP}, custom firmware, ...).
 
-To support more advanced features of modern \a{NIC}, we generally prefer adding
+To support more advanced features of modern \a{NIC}s, we generally prefer adding
 a slightly complex primitive action than emulating it with several primitive ones.
 The older or less powerful controllers are not able to offload more complex chains
 anyway, and more specialized actions will result in less complex drivers.
 A reasonable overlap in action functionalities is acceptable.
 
-Let us extend the example of the ``5-tuple filter''. Such filter can be defined
+Let us extend the example of the ``IP 5-tuple filter''. Such filter can be defined
 as a table with mask-value match mode to allow wildcard rules. The default
 action is empty, passing the packet through. Flows inserted to the table
 are created with the action chain containing only the \act{drop} action.
@@ -315,8 +321,8 @@ use this bit (see section \ref{rfc:tc} for better insight into this decision)
 for the same purpose.
 
 The driver configures the card to offload any prefix of the table graph. If the
-graph can be offloaded completely, it can just mark the packet to be skipped and
-call \a{NAPI} to deliver the packet to the networking stack. In the other case,
+graph can be offloaded completely, it can just mark the packet to be skipped
+and deliver the packet to the networking stack. In the other case,
 the graph was processed just partially and needs to be finished in software. By
 vendor-specific means, the driver should know in which phase the processing was
 interrupted, and therefore know where to continue. For the purpose of partial
@@ -330,8 +336,22 @@ configurable per \netdev. An unprocessed packet is then received by the
 driver. Again, if the table graph can be offloaded completely, no action needs
 to be done in software and the packet can be given directly to the hardware.
 Conversely, when the graph is not offloadable as a whole, the driver must
-run the executor step by step until it can be sure that all reachable tables are
+run the executor in software until it can be sure that all reachable tables are
 offloaded. Then it can hand out the packet to the controller.
+
+The subsystem allows partial offloading of a single table. As already said, the
+controller can perform only classification, passing the action chain ID to the
+software out of band. However, the subsystem in principle allows to offload
+a subset of flows from a table, provided that the driver ensures the policy is
+preserved. For example, the driver can evaluate that the ``IP 5-tuple blacklist
+filter'' is idempotent for missed packets, thus can be performed both in the
+hardware and the software. Then, offloading a subset of rules to the hardware
+serves as a optimization.
+
+However, such usage is discouraged, because the driver would have to
+implement the algorithm to select offloaded flows, moving the complexity to
+individual drivers. The encouraged solution is to offload tables of limited
+size only, forcing the user to implement the rule aging in the upper layers.
 
 \section{A note on OpenFlow}
 
@@ -355,7 +375,7 @@ of \a{TC}, classifiers are in charge of executing actions, therefore it shall
 be acceptable that our classifier would act on the packet on its own. As for
 the \a{TC} actions, we can prohibit attaching them to our filter.
 
-The model we propose is similar to the \a{BPF} classifier, which is already present
+The model we propose is similar to the \texttt{bpf} \a{TC} classifier, which is already present
 in the upstream. Also, \a{eBPF} programs can modify the packets as well, so the
 separated action model should not pose a problem for the community.
 
@@ -428,12 +448,13 @@ would end previously. This is necessary to avoid changing the definition of
 well-known fields.
 
 If there are no unknown fields allowed in a table, the driver does not need to worry
-about the configurable parser. In the opposite case, the driver can have a look
-on the field header. In the simple case, the field would be just
+about the configurable parser. If there are some, the driver can have a look
+on the parser tree definition. In the simple case, the field would be just
 a previously-unknown field of a known header. Several controllers feature
 matching on a whole header or arbitrary part of it, enabling offload of those
 fields. In the most complicated case, new parser states would be defined. If
-the controller features a programmable parser, it can program it accordingly.
+the controller features a programmable parser, the driver can can program it
+accordingly using the information from the parser tree.
 
 \section{Introspection}
 
@@ -552,12 +573,8 @@ parallelization of previously serial code is a notoriously hard problem. By
 contrast, inserting a flow into a hash-table or a tree could be implemented
 with fine-grained locking or even lockless data structures.
 
-For use cases with maximum required performance, neither our subsystem nor
-\a{TC} is ideal. \a{XDP} serves those purposes much better. However, this holds only for
-static scenarios -- an insertion of a rule into a \a{BPF} program means that the
-program needs to be recompiled and reoptimized, possibly loaded into the
-hardware, all of these being lengthy operations.
-
-When the features of the Linux networking stack are not required, it might be
-even better to employ a kernel-bypassing solution like \a{DPDK}.
+For use cases with maximum required software performance, neither our subsystem nor
+\a{TC} is ideal. \a{XDP} serves those purposes much better. When the features
+of the Linux networking stack are not required, it might be even better to
+employ a kernel-bypassing solution like \a{DPDK}.
 

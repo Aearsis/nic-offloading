@@ -46,8 +46,8 @@ customers to deploy their own virtual networks.
 
 The controller supports a similar range of offloads as the 82599 controller. The
 big difference between them is the support for various tunnelling protocols
-across all the offloads: \a{IP}-in-\a{IP}, Teredo, \a{IP}-in-\a{GRE},
-\a{MAC}-in-\a{GRE} (\a{NVGRE}), \a{VXLAN} and Geneve.
+across all the offloads, as the XL710 supports \a{IP}-in-\a{IP}, Teredo,
+\a{IP}-in-\a{GRE}, \a{MAC}-in-\a{GRE} (\a{NVGRE}), \a{VXLAN} and Geneve.
 
 \subsection{Stateless Offloads}
 
@@ -59,9 +59,8 @@ computed in software. For \a{MAC}-in-\a{UDP} tunnels, the support does not
 cover the outer \a{UDP} header. Instead, those protocols are (un)supported in
 a generic way, because the software specifies only the total length between
 the outer and inner \a{IP} headers, allowing the inner transport-layer checksum to
-be computed without specifying the concrete tunnelling protocol in use. This
-limitation should not pose a problem, because these protocols have only
-optional checksum \sect{8.3.4.3, 8.4.4.3}. Similarly, the \a{LSO} engine
+be computed without specifying the concrete tunnelling protocol in use
+\sect{8.3.4.3, 8.4.4.3}. Similarly, the \a{LSO} engine
 supports \a{TCP} segmentation of packets up to 256 KB even when they are
 encapsulated in a tunnel.
 
@@ -134,9 +133,9 @@ space and the rest is available freely.
 The RSS engine was extended to support multiple hash functions. Apart from the
 Microsoft-defined Toeplitz hash function (used in other RSS implementations),
 it supports a simpler variant when software needs to compute the value as well.
-Also, the maximum number of queues used for RSS was raised to 64 queues, but
+Also, the maximum number of queues used for RSS was raised to 64, but
 for physical functions only, because virtual functions can have at most 16
-queues in total.
+queues each.
 
 On the transmit path, the packet goes through a sequence of filters mainly
 provided for security purposes (anti-spoofing, validating \a{VLAN} tag, etc.).

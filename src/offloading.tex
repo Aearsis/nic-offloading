@@ -9,6 +9,10 @@ well-supported. On the other end of the spectrum there are techniques which
 are specific to high-performance cards and are under rapid development at the
 time of writing.
 
+The information in this chapter is based on capabilities of several high-end
+controllers (further discussed in Chapter \ref{chap:nics}), Microsoft \acrfull{NDIS}
+\cite{NDIS}, or available documentation for the Linux kernel.
+
 All of the information given in this chapter is public. However, there is no
 comprehensive overview of available techniques. Individual offloads are given
 business names and the implementation is buried deep inside datasheets.
@@ -22,7 +26,7 @@ specific terminology. The implementation details might differ as well, but the
 high-level principles described in this chapter are implemented by multiple
 \a{NIC} vendors.
 
-An important aspect of an \emph{offload} is that the functionality provided by
+An important aspect of an offload is that the functionality provided by
 the hardware is not required for frames to be processed. The functionality is
 strictly opt-in and only if the driver of the device is capable of doing so, it
 can enable it and benefit from skipping some steps in the network frame
@@ -53,15 +57,19 @@ the frame is dropped.
 
 Moving up to the network layer, \a{IPv6} does not embody a checksum at
 all \cite{RFC2460}. The \a{IPv4} header contains a one's complement checksum of the
-header itself \cite{RFC0791}. The header is built completely by the software
-and its maximum size is 60 bytes,
-therefore the checksum is not expensive to compute. Still, many controllers are
+header itself \cite{RFC0791}. The maximum size of the header is 60 bytes,
+therefore the checksum is not expensive to compute in software. Still, many controllers are
 capable of computing the \a{IPv4} header checksum before transmission.
 
 Matters get complicated at the transport layer. A handful of protocols uses 16-bit
 one's complement checksum of the whole packet -- not only \a{TCP} and \a{UDP},
 the same approach is used by \a{DCCP} or \a{GRE}, for example. The offset at
 which the checksum field is placed in the header varies with the protocol.
+
+Computing the checksum of the whole transport-layer packet is expensive for the
+operating system, because the packet payload can be large. Also, as it is not
+accessed otherwise, it is poorly cached. Therefore, the kernel must read the
+whole payload from memory just to compute its checksum.
 
 Both receive and send offloading capabilities for the transport layer checksums are
 commonly offered by \a{NIC}s. On the receiving side, a \a{NIC} can either
@@ -93,12 +101,12 @@ computed checksum (including the checksum field) should be equal to
 a complement of the pseudo header checksum.
 
 For different checksumming algorithms, alternatives are also often provided.
-For example, the Intel 82599 Controller can offload \a{SCTP} \a{CRC}
-(\cite{82599}, Section 7.2.5.3).
+For example, the Intel 82599 Controller can offload the \a{CRC} of \a{SCTP}
+(\cite{82599}, Section~7.2.5.3)
 
 \section{\a{TCP} Segmentation Offload}
 
-As \a{TCP} is offering an interface of a stream pipe, it includes is a rather
+As \a{TCP} is offering an interface of a stream pipe, it includes a rather
 complicated mechanism which creates the illusion of the pipe on top of a network that is only able to
 transmit individual packets of bounded length.
 When chunks of data are inserted into the pipe, they are split into \emph{segments}.
@@ -119,7 +127,7 @@ interface which allows to enqueue \a{TCP} packets that are larger than the link
 \a{MTU}. Before transmitting them on the wire, the controller splits the packet
 into multiple segments by itself. This way, the network stack is no longer
 bound to the link \a{MTU} and can work with coarser chunks. This feature is
-often referred to as \emph{Large Send Offloading}.
+often referred to as \acrfull{LSO}.
 
 As this offload needs to have insight up to the \a{TCP} header, only a limited
 set of header combinations is typically supported. Apart from plain \a{TCP} over
@@ -144,7 +152,7 @@ The checksums are the key issue the controller has to solve to support
 segmentation offloads over tunnelling protocols, as multiple checksums might
 need to be computed along the way to the inner \a{TCP} packet, while it is the
 \a{TCP} packet payload being segmented. Therefore, not only the \a{TCP}
-checksum, but also the outer \a{UDP} checksum changes for e.g.\ \a{VXLAN}.
+checksum, but also the outer \a{UDP} checksum may change for e.g.\ \a{VXLAN}.
 
 As a side note, \a{TSO} can increase performance in virtualized environments,
 as it increases effective \a{MTU} of the virtual links without
@@ -155,7 +163,7 @@ breaking isolation.
 A similar but much simpler technique exists for \a{UDP} datagrams. The length of one
 \a{UDP} datagram is limited to 64~KB, larger than \a{MTU} of common links.
 \a{UDP} itself does not define any concept of fragmentation, instead it
-utilizes \a{IP} fragmentation to deliver payloads larger than \a{MTU}.
+utilizes \a{IP} fragmentation to deliver payloads larger than the \a{MTU}.
 
 Controllers might be capable of performing \a{IP} packet fragmentation on the
 chip. In contrast to \a{TCP} segmentation offload, \a{IP} fragmentation
@@ -169,7 +177,7 @@ of its convenience, we will use this terminology as well.
 \section{TCP Offload Engine}
 
 Some \a{NIC}s are equipped with a full \a{TCP} stack Offload Engine (TOE). Using this
-engine, the host leaves full \a{TCP}/\a{IP} stack processing on the \a{NIC}.
+engine, the host leaves \a{TCP}/\a{IP} stack processing completely on the \a{NIC}.
 There are two main approaches. In the less invasive one, the software stack
 initiates the connection using regular mechanisms, then hands the stream over
 to the \a{NIC}. From that moment, the \a{NIC} offers a complete stream
@@ -182,7 +190,7 @@ replaces the \a{TCP} stack completely.
 
 While \a{TOE} might seem superior to partial offloads, it brings a lot of
 controversy. Processing \a{TCP} is not a simple task at all, and complex code
-cannot avoid bugs and security flaws. Updating a kernel is a simple task
+cannot avoid bugs and security flaws. Updating an operating system is a simple task
 compared to updating a firmware in a controller. Furthermore, the operating
 system cannot control the extent of features provided by the \a{TOE}, and users
 would probably be confused by missing features like firewall or \a{QoS}. This holds even more so
@@ -233,8 +241,7 @@ scheduling algorithm is compatible with what the \a{NIC} employs.
 
 Recent controllers offer some flexibility in terms of configuration of the
 scheduling algorithm. For example, the Intel XL710 controller \cite{XL710}
-defines queue sets, which can be arranged to a tree. Leaf nodes are queue sets
-tat can be arranged in a tree. The leaf nodes are queue sets,
+defines queue sets, which can be arranged to a tree. The leaf nodes are queue sets,
 the inner nodes select its children in a configurable combination of weighted
 strict priority and weighted round robin order. The bandwidth is distributed
 equally among the queues in a set.
@@ -261,18 +268,19 @@ distributed among \a{CPU}s and the interrupt affinity is set accordingly.
 
 One might dispute \a{RSS} being considered an offload, as it does not have a
 software predecessor. We can take \a{RSS} as a reason why multiple receive queues
-exists and as an inspiration for all other multi-queue offloads.
+exist and as an inspiration for all other multi-queue offloads.
 
 \subsubsection{Differentiated Services}
 
 Instead of merely distributing frames in a stochastic manner, the queues can be
-assigned a specific purpose. Every \a{IP} packet carries a \acrfull{TOS} field,
-which can be used to assign a traffic class to every frame. Traffic classes can
+assigned a specific purpose. Every \a{IP} packet carries a priority field,
+which can be used to assign a traffic class to every frame. The field is called
+\acrfull{TOS} in \a{IPv4} and Traffic Class in \a{IPv6}. Traffic classes can
 then be mapped to receive queues by the \a{NIC}. Knowledge of the priority
 mapping then allows the software stack to handle certain traffic classes with higher
 priority than the others.
 
-Differentiating services as soon as possible is important under heavy load. For
+Differentiating traffic classes as soon as possible is important under heavy load. For
 example, \a{TCP} avoids congestion by lowering the transmission rate when a segment is lost.
 This means that the rate is only lowered when some network element decides to drop
 a packet. Unless some more sophisticated algorithm to drop packets earlier is
@@ -316,14 +324,14 @@ a longest-prefix match can be selected.
 In the exact-match mode, a controller can use a special type of memory called
 \acrfull{CAM} -- a memory where lookup of a row with a given value is done on all
 rows in parallel. Or, it can use hash tables and store the tables in \a{RAM},
-but that requires handling collisions.
+but that requires collision handling.
 
 The mask-value rules are used frequently in the networking world, e.g.\ for routing. For every rule
 individually, the field value is first masked by the mask and then compared
 with the expected value. In hardware, this operation can be realized on all
 rules in parallel by using a \acrfull{TCAM} -- a memory addressable by keys in which
 the rules can ignore individual bits. However, this requires the memory to store at
-least three states per bit. Therefore, the flexibility is paid for with
+least three states per bit in rule. Therefore, the flexibility is paid for with
 much higher number of transistors for the same size of the table. Due to their
 construction, \a{TCAM}s also consume a lot of power and take up a lot of space
 on the chip. Therefore, tables placed in \a{TCAM} are usually a lot more
@@ -331,7 +339,7 @@ constrained than tables in \a{CAM} or \a{RAM} -- in both the total size of the
 used fields and the number of rows.
 
 Range matching can be implemented with a \a{TCAM} extended for this purpose
-or mapped to regular \a{TCAM} matches. Such mapping can consume as much as $2
+or mapped to regular \a{TCAM} matches. Such a mapping can consume as much as $2
 \cdotop \lceil \log_2 (B - A) \rceil$ \a{TCAM} rules to represent $x \in (A,
 B)$ rule. Longest prefix matching is usually implemented by \a{TCAM}s with
 priority such that the lookup result is always the first matching rule. Then,
@@ -348,16 +356,16 @@ very few external ports compared to switches. However, modern high-performance
 multiple \a{PCIe} devices to the host. Usually, the first device is called
 \emph{physical} function, the others \emph{virtual} functions. The virtual
 functions can be handed out to virtual machines, removing the overhead of
-communicating through the hypervisor. Usually, the virtual functions can be
+communication through the hypervisor. Usually, the virtual functions can be
 restricted or partially configured via the physical function, supporting
 virtualization deployments.
 
 The \a{SR-IOV} can be seen as multiple virtual
 ports going out from the \a{NIC}, naturally creating the need for switching.
 The usual scheme is that the adapter external ports as well as the physical and
-virtual functions are connected as external ports to an inner switch. Such
-requirement becomes even more apparent with multi-host network adapters, such
-as the Mellanox ConnectX-5 EN \cite{mlx5-pb} based adapters.
+virtual functions are connected as ports to an inner switch. The need for
+switching becomes even more apparent with multi-host network adapters, such
+as the Mellanox ConnectX-5 \cite{mlx5-pb} based adapters.
 
 The existence of an inner switch is not hidden by the controller. Inner switches
 are usually not that performant and flexible as fully-fledged switch controllers,
@@ -370,10 +378,11 @@ hidden, creating a virtual overlay network over the physical one.
 To give an example, consider a data center running virtual machines, that are
 migrated to balance load. Traditional network elements would react too
 slowly to enable this scenario, so an externally configurable, more flexible
-switch is used instead. The distributed nature of forwarding is suppressed by
-a controller that controls multiple switches in the network and plans paths
-for packet flows. \a{SDN}-configured switches do not try to find paths by
-themselves, they need to be programmed by the controller explicitly. The
+switch is used instead.\a{SDN}-configured switches do not try to find paths by
+themselves, they need to be programmed by a standalone \a{SDN} controller
+explicitly. The controller reactively plans paths for packet flows and
+configures the network accordingly, replacing the distributed switching
+algorithm with a centralized one. The
 communication between the switch and the controller is realized by a protocol
 designed for this purpose -- for example the OpenFlow protocol \cite{openflow}.
 
@@ -401,9 +410,8 @@ decision based on the destination \a{MAC} address, and all of this might seem
 as an over-engineered solution. Nevertheless the destination \a{MAC} address is no
 longer the only field used for selecting the destination port. Usually, the same
 classification engine used for steering packets among receive queues is used
-for the target port selection. As the receive queue is bound to one port, both
-switching and receive queue selection can happen at the same time, such
-a solution is not common though.
+for the target port selection. Rarely, as the receive queue is bound to one
+port, both switching and receive queue selection can happen at the same time.
 
 \subsection{\a{VLAN} and Tunnel Offload}
 
@@ -411,7 +419,7 @@ Another new responsibility of switches is tunnel handling. For several years, \a
 features can be found even in \a{SOHO} switches. The switch can
 transparently emulate multiple networks by adding and removing \a{VLAN} tags on
 the client ports. To improve virtual network isolation, the port traffic
-can be usually filtered based on the \a{VLAN} tags. Similar features with different
+can be usually filtered based on the \a{VLAN} tags. Similar features with
 tunneling protocols can be found in high-end switches.
 
 When a host runs multiple virtual machines, it probably needs to be connected
@@ -422,7 +430,7 @@ software one, or the inner switch inside a \a{NIC}.
 Presence of tunnelling prevents the flow offloading described in Section \ref{offload:flow},
 because the virtual machine would see packets wrapped in the tunnel header.
 Therefore, filtering and encapsulation/decapsulation of
-tunnels must be done as well to enable flow offloading for these scenarios.
+tunnels must be done as well to enable flow offloading in these scenarios.
 
 The problem of tunnel offloading is its future compatibility and flexibility.
 It takes a lot of time since the controller is designed until it is used in
@@ -442,10 +450,10 @@ matched flows is just a simple extension to switching or queue selection.
 Let us show one example where offloading the \a{ACL}s can play a significant
 role -- a \a{DoS} protection. Suppose a server providing a service, which is
 under \a{DoS} attack. Incoming requests undergo accounting that can consider
-arbitrary properties of the request (source address, source subnets, or even
+arbitrary properties of the request (source address, subnet, or even
 some domain-specific properties like the \a{API} key being used). Flows
 exceeding the configured rate are considered malicious and a rule dropping the
-frames of this particular flow is installed. From now on, the traffic from the
+frames of this particular flow is installed to the hardware. From now on, the traffic from the
 attackers can no longer disrupt the service, because the packets are dropped
 before reaching the first software component.
 
@@ -461,24 +469,23 @@ generalized by moving closer to the hardware implementation.
 
 A packet processor usually features a pipeline that can be described as
 follows. When a packet arrives, it is parsed by a parser. Metadata and
-individual header fields are extracted to a structure following the packet
+individual header fields are extracted to a metadata following the packet
 through the pipeline. Then, a series of match-action steps is performed. In
-every step, the packet is matched to a table previously described in Section
-\ref{offload:classification}. From there, a Match
-Index is obtained and used to lookup an entry in an action table, which
-contains a chain of actions for every Match Index possible. Actions are usually
+every step, the packet metadata is used to search for a matching entry a table,
+using match modes previously described in Section \ref{offload:classification}.
+From there, a \emph{match index} is obtained and used to lookup an entry in an
+action table, which
+contains a chain of actions for every match index possible. Actions are usually
 operations on the metadata (set field, copy field value to another field, etc.)
 or the packet as a whole (drop, pop header). The action results might be
 reflected in the packet data directly, or just in the metadata carried around.
-At the end of the match-action pipeline, there is a deparser, which moves
-the changed metadata back to the packet to reflect all actions. The last step is
+At the end of the match-action pipeline, there is a deparser, which applies
+the changes in metadata back to the packet to reflect all actions. The last step is
 necessary to avoid touching the packet data directly from the pipeline, which
 is complicated.
 
-This claim of the previous paragraph is supported by the existence and spread of the OpenFlow \cite{openflow}
-protocol. The protocol serves for communication between switches and \a{SDN}
-controllers, as explained in Section \ref{offload:flow}. The protocol operates
-on tables, header fields and actions, and assumes that the switch packet
+The OpenFlow protocol operates on tables, header fields and actions, and
+assumes that the switch packet
 processing pipeline has the architecture described.
 
 In the most common case the processing pipeline is fixed. It might be
@@ -487,9 +494,9 @@ a fixed pipeline has a predefined set of headers matched (and the mode of
 matching), and a set of actions allowed.
 
 For example, the switching decision of an ordinary switch can be described as a table
-performing a lookup on destination \a{MAC} address. If the address is known,
-the specified outgoing port is used. If not, the packet is mirrored to all
-ports on behalf of the default action.
+performing a lookup on the destination \a{MAC} address. If the address is known,
+the specified egress port is used. If not, the packet is mirrored to all
+ports as per the default action.
 
 As another example, we can take the \a{VLAN} engine of a simple switch. This step
 is performed in the egress pipeline of a port (specifically, after the forwarding database
@@ -504,9 +511,9 @@ matches the \a{VLAN} the host is connected to and the action is to pop the \a{VL
 header. Remember that the default action remains to drop the packet, so the
 engine performs filtering in the same step as well.
 
-Some switch silicons have the pipeline at least partially programmable.
+Some controllers have the pipeline at least partially programmable.
 The software can define a new graph of tables, which is inserted into the
-pipeline. Those tables can match an arbitrary subset of headers matched and can be
+pipeline. Those tables can match on an arbitrary subset of header fields and can be
 used to offload almost any real-world packet processing scenario of known
 protocols.
 
@@ -532,7 +539,7 @@ the flow (see Section \ref{mlx:pipeline}).
 
 % Removed paragraphs for easier access:
 %
-% The pipeline can be formally described in the \a{P4} language\cite{P4}.
+% The pipeline can be formally described in the \a{P4} language \cite{P4}.
 % A program in \a{P4} specifies two aspects of the pipeline: the header parser
 % and the match-action pipeline. The language is expressive enough to describe
 % many existing fixed pipelines, yet constrained enough to allow implementation

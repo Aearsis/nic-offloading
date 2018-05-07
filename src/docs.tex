@@ -17,33 +17,29 @@ written against a \emph{mocked} kernel. Most importantly, all of the code
 actually runs in the userspace, even though it simulates a code being run in
 both the kernel mode and the userspace.
 
-The code still uses some headers from Linux, we do not expect it to be
-compilable on other platforms. Due to the targeted audience, we do not expect
-this to be a problem.
-
 \section{Usage}
 
-The source code is written in the C language and follows the GNU99 standard.
-No libraries are required to compile it.
+The source code is written in the C language and follows the GNU89 standard.
+No libraries are required to compile it. The code still uses some Linux
+headers for convenience, we do not expect it to be compilable on other
+platforms. Due to the target audience, we do not consider it a problem.
 
 The archive contains a \texttt{Makefile} that should compile all the sources by
-running \texttt{make}. If the compilation was successfull, you can run any of
+running \texttt{make}. If the compilation was successful, you can run any of
 the tests from the \texttt{tests} directory. Also, you can run the
 \texttt{test.sh} script that runs all the tests and compares their outputs to
 the expected ones.
 
 The tests usually do some configuration and simulate receiving packets in
-between individual steps. As the subsystem produces debug messages to the
+between individual configuration steps. As the subsystem produces debug messages to the
 output, you can see what individual components do. The expected behavior is
-usually printed before running the steps, and documented more extensively in
+usually printed before running the steps and documented more extensively in
 the source code.
 
 The sources of the tests are more interesting than their outputs. They show
 the expected userspace interface and the configuration of the subsystem. To
 simulate packet receival, the test code acts both as the userspace and the
-\a{NIC} driver.
-
-\section{Implementation Overview}
+\a{NIC} driver, as shown on Figure \ref{fig:mat-comps}.
 
 \begin{figure}
 	\begin{tikzpicture}[
@@ -77,7 +73,10 @@ simulate packet receival, the test code acts both as the userspace and the
 	\end{tikzpicture}
 	\centering
 	\caption{The components of the demonstration implementation.}
+	\label{fig:mat-comps}
 \end{figure}
+
+\section{Implementation Overview}
 
 At the top level, we can split the implementation to three components. First,
 there is the kernel mock. It defines structures like \skb{} or \netdev{}, but
@@ -95,9 +94,9 @@ only.
 Second, there is the implementation of the MAT subsystem. We will describe this
 part in detail in the rest of the appendix. Together with the kernel mock, the
 implementation is linked to a single archive \texttt{libmat.a} to represent
-\emph{the kernel}.
+``the kernel''.
 
-Finally, the archive contains a few test scenarios to demonstrate, how the
+Finally, the archive contains a few test scenarios to demonstrate how the
 subsystem is expected to be used. As already mentioned, the test scenarios
 interact with the kernel from both userspace and hardware ends. Let us have
 a look at them first.
@@ -110,7 +109,7 @@ There are five tests included:
 	\item[\texttt{exact}, \texttt{hash}, and \texttt{tcam}] \hfill \\
 		These configure a table of the given type, set the default action chain
 		and insert a rule to drop matching packets. The tests demonstrate how
-		the tables are configured and tests the software implementation of the
+		the tables are configured and test the software implementation of the
 		subsystem.
 
 	\item[\texttt{simple-nic}] \hfill \\
@@ -217,8 +216,9 @@ notably, we purposefully ignore:
 	\item[Netlink method calling] \hfill \\
 		Where the netlink interface is just a plain call to a function with
 		fixed arguments, we decided to just call the function directly. The
-		netlink interface is designed to be very flexible and binary
-		compatible, but not particularly readable.
+		netlink protocol is designed to be very flexible and binary
+		compatible, but not particularly readable. Hiding the actual interface
+		into netlink messages would introduce unnecessary clutter.
 \end{description}
 
 \noindent However, we did not simplified the important things. We strictly separate the
@@ -228,23 +228,23 @@ in a shared header file, which is separate from the implementation. As already
 said, the header file contains also definitions of functions, which can be
 easily transformed into simple calls over the netlink interface.
 
-The \texttt{netdev} and \texttt{tc} are simple modules serve as brokers to
+The \texttt{netdev} and \texttt{tc} are simple modules that serve as brokers to
 communicate with other parts of the kernel. In real-world implementation, these
 would probably get thicker to better separate the implementation from drivers,
-supporting the stability of the \a{kABI}.
+supporting the stability of the kernel \a{ABI}.
 
 \subsubsection{Parser}
 
 The \texttt{parser} module keeps the representation of the packet parser. The
 parser is defined completely as a runtime data structure to allow extensions.
 The module defines two important structures: \struct|mat_parser| and
-\struct|mat_header_field|. Both are identified by globally unique indices.
+\struct|mat_header_field|. Instances of both are identified by globally unique indices.
 
 In the following paragraphs, we use the term ``parser'' for both instances of
 \struct|mat_parser| structure and the parser tree. In fact, the parser tree is
 nothing more than the root parser instance for the Ethernet header.
 
-For every protocol defined, an instance of \struct|mat_parser| is created. The
+An instance of \struct|mat_parser| is created for every protocol defined. The
 parser is used to identify fields from a packet of the corresponding protocol
 and to determine the parser for the next-layer header.
 
@@ -340,9 +340,9 @@ about a table. Even though it is one of the largest structures in the codebase,
 there is nothing unexpected.
 
 The \struct|mat_flow_key| structure is a pure data carrier for flow keys. Both
-its size and interpretation of contents is dependent on the table, for which the
+its size and interpretation of contents is determined by the table for which the
 flow key is created. Therefore, the flow key is always associated with
-a concrete table, even though it does not carry a pointer to the table.
+a concrete table instance, even though it does not carry a pointer to the table.
 
 When a table is created, a mapping of fields to the flow key bits is computed.
 This part solves a Bin packing problem to distribute variable-sized fields to

@@ -13,12 +13,14 @@ ConnectX-6. We decided to include ConnectX-4 mainly due to the
 ConnectX-5 is already merged into the Linux kernel, and we will try to provide
 updated information where applicable.
 
-Counterintuitively, the controller is being driven by \sw{mlx5\_core} driver in the
+Counterintuitively, the controller is driven by the \sw{mlx5\_core} driver in the
 Linux kernel, while the \sw{mlx4} driver supports controllers up to ConnectX-3.
 The rationale seems to be that ConnectX-3 is a 40 Gbps controller, hence the
-suffix 4. For complete configuration, an external collection of tools is needed.
-The kernel drivers are dedicated to controlling one network function, not the
-adapter as a whole.
+suffix 4.
+
+For complete configuration, an external collection of tools is needed. The
+kernel drivers are dedicated to controlling individual network functions, not
+the adapter as a whole.
 
 The controller is capable of presenting up to 16 physical functions and up to
 256 virtual functions using \a{SR-IOV}. Both of these need to be configured by
@@ -133,7 +135,7 @@ feature used in the Linux kernel driver.
 
 For transmitting a packet, the pipeline is reversed. First, the packet reaches
 a Send Queue, where the packet is stored until it is to be scheduled. From
-there, packets are being withdrawn by instances of \a{TIS}, counterparts of
+there, packets are withdrawn by \acrfull{TIS} instances, counterparts of
 \a{TIR}. \a{TIS} is responsible for performing \a{LSO}, if applicable. Also,
 a fixed priority is assigned to \a{TIS}, which presumably plays a major role in
 scheduling.

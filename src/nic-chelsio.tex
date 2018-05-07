@@ -33,21 +33,21 @@ it is quite confusing. For example, we cannot say for sure hat any two features
 described here can be used at the same time.
 
 The architecture of the \a{ASIC} is best described in a paper published by
-Chelsio\cite{chelsio-t6}, it does not however go into much detail. As the
+Chelsio \cite{chelsio-t6}, it does not however go into much detail. As the
 vendor refused to share any information with us, we have to resort to guessing.
 A lot of details are exposed in the manual for the proprietary driver extension
-and configuration utility\cite{chelsio-uw}. Still, both these manuals only
+and configuration utility \cite{chelsio-uw}. Still, both these manuals only
 explain the capabilities of the controller from a user's point of view, not the
 hardware capabilities in detail. For this kind of information, we had to
 carefully examine the source code of the Linux kernel driver.
 
-The driver in linux kernel, \sw{cxgb4} is shared for all controllers from the
+The driver in Linux kernel, \sw{cxgb4} is shared for all controllers from the
 Terminator series, starting from Terminator 4. Therefore, we know the union of
 the capabilities of all these controllers, because we cannot differentiate
 them. As we do not expect features to be removed in newer versions, we suppose
 that the current state reflects the capabilities of Terminator 6.
 
-As usual, \a{SR-IOV} is supported by the controller. The controller handles up
+As usual for modern high-end \a{NIC}, \a{SR-IOV} is supported. The controller handles up
 to 256 virtual instances, mapped to virtual or physical functions. Even though
 the controller can identify itself as 8 physical functions, only the first
 4 are capable of \a{SR-IOV}. With the factory firmware, each of them can
@@ -62,9 +62,8 @@ functionality.
 The controller supports all of the mentioned stateless offloads. An interesting
 requirement is placed on the software in case of \a{IPv4} header checksum for
 \a{LSO} of \a{MAC}-in-\a{UDP} tunnels -- the driver has to compute the checksum
-of the whole \a{IPv4} header without the total length field. We can only guess
-why, as the controller should only fragment \a{UDP} datagrams, not create new
-ones.
+of the outer \a{IPv4} header without the total length field, which is different
+for the last segment created.
 
 For the receive checksum, the controller is capable of computing the checksum
 of a received packet in a generic way, as described in section
@@ -80,11 +79,11 @@ supported tunnels, it is not used elsewhere in the driver code.
 There is a step in the pipeline where custom classification is performed and
 programmable actions are taken. The controller always contains a TCAM to
 install up to 496 rules, and optionally also a memory dedicated for half
-a million hashed rules. The action part might seem a bit constrained, but is
-pretty powerful.
+a million hashed rules. The action part might seem a bit constrained at first,
+but in the end it is quite powerful.
 
 The match-action pipeline starts with a fixed parser, extracting a similar set
-of fields we have already seen -- \a{MAC} addresses, ethertype, 2 layers of
+of fields we have already seen -- \a{MAC} addresses, Ethertype, 2 layers of
 \a{VLAN}s, \a{IP} addresses, \a{TCP} and \a{UDP} ports. In the kernel, all the
 available fields are represented in the structure
 \linuxstruct{drivers/net/ethernet/chelsio/cxgb4/cxgb4.h}{1009}{ch\_filter\_tuple}.
@@ -107,7 +106,7 @@ filters is not arbitrary, as filters with lower indices have higher priority.
 For matched flows, exactly one of three actions can be taken: pass, drop or
 switch. When the packet is passed, its receive queue can be selected (otherwise
 it is selected by \a{RSS} automatically). The possibilities open with the switch
-action. In the beginning, switch action instructs the controller to loopback
+action.  In essence, the switch action instructs the controller to loopback
 the packet to a port. However, it can modify some header fields along. Namely,
 it can alter \a{MAC} addresses, push, change, or pop VLAN tag and/or modify \a{IP}
 addresses and \a{L4} ports. That means the controller is capable of offloading
@@ -116,7 +115,7 @@ e.g.\ routing with stateless \a{NAT}.
 \subsection{Other Offloads}
 
 Chelsio emphasizes a lot of other offloads the controller supports. The range
-of additional functions the Unified Wire Adapter covers:
+of additional functions the controller features:
 
 \begin{itemize}
 \item \a{TCP}\acrfull{TOE} % HACK

@@ -1,39 +1,39 @@
-\chapter{Proposed subsystem}
+\chapter{Proposed Subsystem}
 \label{chap:rfc}
 
 The current state of \a{TC} offloading is not ideal. It somehow works in
-practice, but certainly has some drawbacks. These drawbacks support the
+practice, but certainly has some drawbacks. These drawbacks strenghten the
 motivation to explore other options. We would like to shortly review the most
-important problems of the \a{TC} offloading:
+important problems of \a{TC} offloading:
 
 \begin{description}
 	\item[Broken partial offloading] \hfill \\
-		When the user does not specify \Verb|skip_sw| flags, the hardware can
+		When the user does not specify the \Verb|skip_sw| flags, the hardware can
 		offload only a subset of rules. It is not guaranteed that the policy is
 		preserved.
 	\item[Flexibility] \hfill \\
 		While the flexibility of the \a{TC} subsystem is good for the user, it
-		complicates offloading. The user works with graph of rules which may
+		complicates offloading. The user works with a graph of rules which may
 		run programs, but the hardware needs tables and simple actions.
 	\item[Historic API] \hfill \\
 		The \a{TC} subsystem is complex and hard to understand. The code is
 		burdened with almost 20 years worth of ad-hoc extensions. Its
-		documentation is not up-to-date. Both developers of drivers and users
+		documentation is not up-to-date. Both the developers of the drivers and the users
 		have hard time understanding the runtime structures.
 	\item[Bad error reporting] \hfill \\
 		The only feedback from the subsystem with regard to offloading is
-		a flag, whether a filter was offloaded or not. When it was not, the
+		a flag indicating whether a filter was offloaded or not. When it was not, the
 		user has no way of knowing why.
 \end{description}
 
-\noindent With these drawbacks in mind, we would like to propose a subsystem, which would
-overcome them. The subsystem is designed to be an offloadable representation of
-a match-action pipeline, which is present (in restricted forms) in contemporary
+\noindent With these drawbacks in mind, we would like to propose a subsystem that would
+remedy them. The subsystem is designed to be an offloadable representation of
+a match-action pipeline, which is present (in restricted forms) in the contemporary
 \a{NIC}s. Along with avoiding the drawbacks of \a{TC} offloading, we focused on
-following goals:
+the following goals:
 
 \begin{itemize}
-	\item Allow to use as much packet-processing capabilities of modern \a{NIC}
+	\item Allow using as many packet-processing capabilities of modern \a{NIC}
 		as possible.
 	\item The subsystem must follow the Linux nature of being a hardware
 		commoditizer, and allow a single configuration to run with any \a{NIC}.
@@ -43,32 +43,33 @@ following goals:
 		other solutions available. The subsystem should integrate well with the
 		kernel datapath.
 	\item Offloading the work of the subsystem should be as easy as possible.
-		The \a{API} against drivers should follow this purpose the most.
-	\item The hardware usually needs to allocate resources long in advance.
-		Allow to restrict the resources in software to ease (or allow) the
+		The \a{API} towards the drivers should be designed specifically for
+		offloading.
+	\item The hardware usually needs to allocate resources well in advance.
+		Allow to restrict the resources in software to facilitate (or allow) the
 		offload.
 	\item The user should be able to understand the subsystem easily. The
 		userspace utilities should interact with the subsystem through an
 		understandable \a{API}.
-	\item The offload must be restricted enough to preserve the defined policy.
-		Even when it is not possible to offload the setup completely.
+	\item The offload must be restricted enough to preserve the defined policy,
+		even when it is not possible to offload the setup completely.
 	\item Recent controllers have good classification engines, but not so rich
-		possibilities in modifying the packets. It should be possible to
+		possibilities of modifying the packets. It should be possible to
 		offload the classification independently.
 	\item It is not possible to drop \a{TC} from the kernel. The subsystem must
-		not interfere with \a{TC}, if not used.
-	\item There are multiple ways how to represent the policy for the scenario.
+		not interfere with \a{TC} if not used.
+	\item There are multiple ways how to represent the policy for a particular scenario.
 		Help the userspace with creating a setup which will be offloadable.
 	\item When the subsystem is not used, it should not slow down the
 		networking stack. We would like to avoid creating new hook as well.
 	\item When the work cannot be offloaded, doing the work in software should
-		not be extremely expensive, when it comes to performance.
+		not be extremely expensive when it comes to performance.
 \end{itemize}
 
 \noindent The key idea is to replace the \a{TC} role in the \a{ACL}, flow, and
 match-action pipeline offloading,
-without actually replacing \a{TC}. This proposal cannot be considered final and
-will be a subject to discussion at the networking mailing lists before a patch
+without actually replacing \a{TC} itself. This proposal cannot be considered final and
+will be subject to discussion on the networking mailing lists before a patch
 will be created. Also, it is not meant as ``all or nothing'' -- we present many
 ideas from which only a subset might be implemented in the end.
 
@@ -400,14 +401,14 @@ to offload \a{RFS} or the proposed subsystem.
 
 For a concrete example, take the Intel Flow Director filters. They can be used
 to offload \a{RFS}, Ethtool Flow Classification, or the subsystem we propose.
-The driver can either make a fixed decision, switch between these offloads
-during compilation, let the user select using driver-specific configuration
-means, or use some heuristics to select the most beneficial offload
+The driver can either make a fixed decision, switching between these offloads
+during compilation, let the user make the choice using driver-specific configuration
+tools, or use some heuristics to select the most beneficial offload
 automatically.
 
 One could argue that for generic, low-level packet processing the kernel
 already contains \acrfull{XDP}. However, offloading classification is
-considerably simpler than running arbitrary \a{BPF} program.
+considerably simpler than running an arbitrary \a{BPF} program.
 
 \section{Configurable parser}
 \label{rfc:parser}

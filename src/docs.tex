@@ -2,7 +2,7 @@
 \label{app:doc}
 
 The attached source code contains an implementation of the subsystem under
-working title Match-Action Tables, MAT for short. In this appendix, we would
+a working title Match-Action Tables, MAT for short. In this appendix, we would
 like to document the source code from a high-level point of view. We do not
 discuss implementation details, as they are documented in the source code.
 Also, we do not discuss the functionality itself, as it closely follows the
@@ -30,13 +30,13 @@ the expected ones.
 
 The tests usually do some configuration and simulate receiving packets in
 between individual configuration steps. As the subsystem produces debug messages to the
-output, you can see what individual components do. The expected behavior is
+output, you can see what the individual components do. The expected behavior is
 usually printed before running the steps and documented more extensively in
 the source code.
 
 The sources of the tests are more interesting than their outputs. They show
 the expected userspace interface and the configuration of the subsystem. To
-simulate packet receival, the test code acts both as the userspace and the
+simulate packet reception, the test code acts both as the userspace and the
 \a{NIC} driver, as shown on Figure \ref{fig:mat-comps}.
 
 \begin{figure}
@@ -76,7 +76,7 @@ simulate packet receival, the test code acts both as the userspace and the
 
 \section{Implementation Overview}
 
-At the top level, we can split the implementation to three components. First,
+At the top level, we can split the implementation into three components. First,
 there is the kernel mock. It defines structures like \skb{} or \netdev{}, but
 also contains bits extracted from the internal API of \a{TC}. Also, we
 extracted the implementation of linked lists and several general-purpose
@@ -114,7 +114,7 @@ There are five tests included:
 		This test demonstrates the driver interface and the hardware offload
 		mechanism. The emulated \a{NIC} contains a blacklist 5-tuple filter in
 		its pipeline. The test configures a table which matches on IP addresses
-		and simulate receiving packets. It is demonstrated how the ingress
+		and simulates receiving packets. It demonstrates how the ingress
 		processing is moved to the \a{NIC}.
 
 	\item[\texttt{parser}] \hfill \\
@@ -219,16 +219,16 @@ notably, we purposefully ignore:
 		into netlink messages would introduce unnecessary clutter.
 \end{description}
 
-\noindent However, we did not simplified the important things. We strictly separate the
+\noindent However, we did not simplify the important things. We strictly separate the
 kernel and userspace memory areas. Data structures can be shared only from the
 userspace to the kernel, not the other way around. Such structures are declared
 in a shared header file, which is separate from the implementation. As already
-said, the header file contains also definitions of functions, which can be
+said, the header file contains also the definitions of functions, which can be
 easily transformed into simple calls over the netlink interface.
 
 The \texttt{netdev} and \texttt{tc} are simple modules that serve as brokers to
-communicate with other parts of the kernel. In real-world implementation, these
-would probably get thicker to better separate the implementation from drivers,
+communicate with other parts of the kernel. In the real-world implementation, these
+would probably get thicker to better separate the implementation from the drivers,
 supporting the stability of the kernel \a{ABI}.
 
 \subsubsection{Parser}
@@ -238,8 +238,8 @@ parser is defined completely as a runtime data structure to allow extensions.
 The module defines two important structures: \struct|mat_parser| and
 \struct|mat_header_field|. Instances of both are identified by globally unique indices.
 
-In the following paragraphs, we use the term ``parser'' for both instances of
-\struct|mat_parser| structure and the parser tree. In fact, the parser tree is
+In the following paragraphs, we use the term ``parser'' for both the instances of
+the \struct|mat_parser| structure and the parser tree. In fact, the parser tree is
 nothing more than the root parser instance for the Ethernet header.
 
 An instance of \struct|mat_parser| is created for every protocol defined. The
@@ -253,7 +253,7 @@ to be used to match on, it is assigned to a parser.
 
 Every parser (except for the innermost protocols) has two fields by default
 -- \Verb|nexthdr| and \Verb|hdrsize|. The former identifies the field used
-to determine the next-layer parser, the latter to determine the distance to
+to determine the next-layer parser, the latter determines the distance to the
 next header in bytes.
 
 To define which parser will be used to parse the next header, a mask-value
@@ -263,10 +263,10 @@ provided by the \texttt{tcam} module. The structure simulates a \a{TCAM}.
 The preconfigured parser identifies some basic fields and shows how to solve
 several challenges. As an example of a challenge, the \emph{Ethertype} field is
 identified by the \a{NIC}s as the Ethertype of the last \a{VLAN} tag, or the
-\a{MAC} header directly if no \a{VLAN} tags are present. As a header field can
-be attached to up to one parser only, we define the Ethertype as a standalone
+\a{MAC} header directly if no \a{VLAN} tags are present. As such header field can
+be attached to at most one parser, we define the Ethertype as a standalone
 parser and make the Ethernet and \a{VLAN} parsers ``look ahead'', out of the
-area that is skipped by parsing them. For illustration, have a look at the
+area that is skipped by parsing the corresponding header. For illustration, have a look at
 Figure \ref{fig:ethertype-parser}.
 
 \begin{figure}
@@ -324,61 +324,62 @@ Figure \ref{fig:ethertype-parser}.
 \end{figure}
 
 It is important to note that the preconfigured parser tree should never be actually
-used to extract fields. The values of well-known fields are already be extracted
+used to extract fields. The values of well-known fields are already extracted
 by the kernel flow dissector and thus present in the \skb. However, the
-definition needs to be precise not to break offload to programmable parsers.
+definition needs to be precise so as not to break the offload to the programmable parsers.
 
 \subsubsection{Table}
 
 The \texttt{table} module stores the configured tables. There are two main
 structures defined: \struct|mat_table| and \struct|mat_flow_key|.
 
-The purpose of \struct|mat_table| structure is to keep all the information
+The purpose of the \struct|mat_table| structure is to keep all the information
 about a table. Even though it is one of the largest structures in the codebase,
 there is nothing unexpected.
 
 The \struct|mat_flow_key| structure is a pure data carrier for flow keys. Both
-its size and interpretation of contents is determined by the table for which the
+its size and interpretation of content is determined by the table for which the
 flow key is created. Therefore, the flow key is always associated with
 a concrete table instance, even though it does not carry a pointer to the table.
 
 When a table is created, a mapping of fields to the flow key bits is computed.
-This part solves a Bin packing problem to distribute variable-sized fields to
+This part solves Bin packing problem to distribute variable-sized fields to
 the least number of 64-bit \emph{parts} of the flow key. The number of parts is
 then recorded in the table.
 
 As the flow key interpretation depends on the table, it is the \texttt{table}
-module what manipulates it, including filling the flow key with data parsed
+module that manipulates it, including filling the flow key with the data parsed
 from the packet.
 
 Every table holds its flows and action chains separately. Action chains are
-stored in a hash table, in which chains are identified by a unique 64-bit
+stored in a hash table, in which the chains are identified by a unique 64-bit
 number, \emph{Action ID}. In the future, the ID could be computed from the
-contents of the chain, allowing to merge identical chains into one.
+content of the chain, allowing to merge identical chains into one.
 
 Determining the Action ID varies with the table type. Tables of the \emph{Hash}
-type use the flow hash directly, therefore do not need to store any additional
+type use the flow hash directly, and therefore do not need to store any additional
 data. Other types use different data structures following their purpose.
 
 \subsubsection{Executor}
 
 The software functionality of the subsystem is implemented in the
-\texttt{executor} module. That includes both executing action chains and
+\texttt{executor} module. That includes both executing the action chains and
 taking the packet through the pipeline of tables.
 
 To allow fine-grained control by the device drivers, which might need to
-continue the operation from multiple places, the module exports its control
-structure, \struct|mat_executor|. The structure contains a state of execution
-as well as a few variables which control the execution.
+resume the processing in software after offloading it partially to hardware,
+the module exports its control
+structure, \struct|mat_executor|. The structure contains the execution state
+as well as a few variables that control the execution.
 
 To start the executor from the beginning, the exported \a{TC} filter
 initializes the structure and calls \fnc|mat_executor_run|. The executor
-then performs all the necessary steps, until a final verdict is returned.
+then performs all the necessary steps, until the final verdict is returned.
 
 When the driver needs to start the execution from a different point (e.g.\ when
-the hardware classified the packet, but it is not able to execute the actions),
+the hardware classified the packet, but is not able to execute the actions),
 the driver initializes the \struct|mat_executor| structure, fills the known
-information and uses the structure to ``restore'' the execution in software.
+information and uses the structure to resume the execution in software.
 
 The \struct|mat_executor| structure holds a \a{TTL} number. With every step
 executed, the \a{TTL} is decreased. When the \a{TTL} drops to zero, the
@@ -386,8 +387,8 @@ execution is terminated with a special result code.
 
 When the \a{NIC} partially offloads the egress path, the driver has to run the
 executor for any prefix of the table graph, such that the remaining suffix is
-offloaded. The driver can either precompute the \a{TTL} to make the executor
+offloaded. The driver can either precisely choose the \a{TTL} to make the executor
 stop at the right time, or just run the execution step-by-step.
 
 The \a{TTL} field also protects from being caught in an infinite loop when the
-subsystem is configured wrong.
+subsystem is misconfigured.

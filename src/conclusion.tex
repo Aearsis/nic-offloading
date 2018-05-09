@@ -2,9 +2,9 @@
 
 We succeeded in our goal to design a mechanism that would allow the user to
 define a policy to process packets in the kernel, while allowing to offload the
-policy into compatible \a{NIC}s. We did not realize the initial plan to pick
-a few common features and create a specific mechanism for them, but instead we
-proposed a generic mechanism to offload match-action processing.
+policy into compatible \a{NIC}s. Rather than following the initial plan to pick
+a few common features and create a specific mechanism for them, we
+proposed a generic mechanism to offload the match-action processing.
 
 We did so after carefully studying the pipeline of five high-end \a{NIC}s.
 The subsystem we proposed is descriptive enough to represent the majority of
@@ -12,18 +12,18 @@ classification and packet-modification features these \a{NIC}s have while
 being restricted enough to be offloaded easily.
 
 Unfortunately, we have not succeeded in getting access to confidential
-documents to support the research. Multiple vendors rejected to give us
-information, that is not already public. Therefore, the thesis builds upon
+documents to support the research. Multiple vendors refused to give us
+information that is not already public. Therefore, the thesis builds upon
 public information only.
 
 The proposed subsystem could replace the \a{TC} offload. It is better suited to be
 offloaded to hardware, and thanks to a different approach it resolves some
-serious problems of \a{TC} offload.
+serious problems of the \a{TC} offload.
 
 It is not the first work of its kind. Most notably, John Fastabend proposed
-a Flow API \cite{flow-api}, that might seem very similar for a spectator. The
-Flow API however served to precisely describe a fixed pipeline of the
-controller and allow the userspace to program it directly, bypassing the
+the Flow API \cite{flow-api}, which might seem very similar. The
+Flow API, however, serves to precisely describe a fixed pipeline of the
+controller and to allow the userspace to program it directly, bypassing the
 kernel. In contrast, our subsystem starts with doing the work in the kernel and
 then offering the drivers to offload it.
 
@@ -31,20 +31,20 @@ Another project that is somewhat similar is the support for Flowtables in
 Netfilter, implemented by Pablo Neira Ayuso \cite{flowtables}. The Flowtables
 are limited to offloading forwarding, and take a ``reversed'' approach -- it is
 the user who decides which particular rules should be offloaded. The drivers
-create the tables and user fills them up.
+create the tables and the user fills them.
 
-To support our statements, we created a proof-of-concept implementation, which
-is attached to the electronic version of the thesis. Otherwise, it is available
+To support our design, we created a proof-of-concept implementation, which
+is attached to the electronic version of the thesis. It is also available
 on Github\footnote{\href{https://github.com/Aearsis/mat}{\texttt{https://github.com/Aearsis/mat}}}.
 
 The documentation of the implementation can be found in Appendix
 \ref{app:doc}. The demonstration shows that the subsystem can be created, can
-be used to process packets and that drivers can offload its work.
+be used to process packets and that the drivers can offload its work.
 
 While studying the source codes, we discovered two bugs in the Linux kernel.
 Both of them has been reported to the respective maintainers. Unfortunately,
 only one of them replied and confirmed the bug. As for the other one, we are
-currently testing the patch and will submit it soon.
+currently testing the patch and plan to submit it soon.
 
 In the future, we plan to send the proposal of the subsystem to the Linux
 NetDev community.

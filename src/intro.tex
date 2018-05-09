@@ -1,31 +1,31 @@
 \chapter{Introduction}
 
-The networking development is a never-ending race towards wider bandwidth,
+The networking technology development is a never-ending race towards wider bandwidth,
 lower latencies and higher rates of processed packets. Where general-purpose
-\a{CPU}s stay behind, dedicated hardware can increase the network performance.
+\a{CPU}s stay behind, dedicated hardware can increase network performance.
 Modern \acrfullpl{NIC}, in addition to connecting the host
 computer to the network, also have advanced features that assist with
-processing packets. The technique when the hardware is used to perform a part of
-a job originally done in software is usually called \emph{hardware offloading}.
+processing packets. When hardware is used to perform a part of
+a job originally done in software the technique is usually called \emph{hardware offloading}.
 
-Recently, high-end controllers learned how to classify and modify packets. For
-example, drop packets with certain properties or automatically extract an inner
+Recently, high-end controllers learned how to classify and modify packets, for
+example, to drop packets with certain properties or to automatically extract an inner
 packet encapsulated in a tunneling protocol. These features are useful (not
 only) in environments where virtual machines running on shared hosts communicate via isolated
 virtual networks that span over shared physical wires and devices. The less time the
-host spends on preprocessing network traffic for the virtual machines, the more
-it is left for doing the fruitful work.
+host spends on preprocessing the network traffic for the virtual machines, the more
+is left for doing the fruitful work.
 
-On the opposite end of the network stack, there are applications that process
-packets, while being part of the network function. For example the popular
-Open vSwitch, that implements a full-featured software switch. There is
-a considerable interest in offloading its work to the hardware to increase
+On the opposite end of the network stack are applications that process
+packets while still being a part of the network function. For example
+Open vSwitch implements a full-featured software switch. There is
+a considerable interest in offloading its work to hardware to increase
 speed and lower resource consumption.
 
 To use the advanced processing capabilities of the controllers, the configured
 policy must find its way from the userspace to the hardware. Currently, the
 kernel is often bypassed with solutions like \acrfull{DPDK}, allowing an
-application from userspace to configure the controller directly, using more
+application to configure the controller directly from userspace, using more
 features of the card to process packets. However, the software is
 highly specialized for this purpose and generally cannot be combined with
 features the Linux network stack provides.
@@ -35,8 +35,8 @@ in-kernel packet processing -- among others Netfilter, \a{TC}, \a{XDP}.
 Unfortunately, none of them really fits to be offloaded using the packet
 modification capabilities of the controllers.
 
-New subsystems could be created in Linux kernel to support specific features of
-individual controllers. However, the Linux kernel philosophy is to abstract the
+New subsystems could be created in the Linux kernel to support specific features of
+the individual controllers. However, the Linux kernel philosophy is to abstract away from the
 hardware, so the subsystems created would have to work even without the
 specific hardware installed. Therefore, solutions which would support devices
 from a single vendor only are likely to be rejected by the community.
@@ -47,13 +47,13 @@ getting more and more flexible. Between designing the controller and starting
 to sell a finished adapter, new protocols are being invented. For the hardware,
 being flexible is the only way to keep up with the software.
 
-The flexibility of the controllers can be utilized to smudge differences
-between individual controllers, allowing to create a subsystem which would be
+The flexibility of the controllers can be utilized to reduce differences
+between the individual controllers, allowing to create a subsystem which would be
 offloadable by multiple controllers. The main goal of the thesis is to design
 such a subsystem. The subsystem should provide the glue between userspace doing
-packet processing and drivers of network controllers, creating a generic
+packet processing and the drivers of the network controllers, creating a generic
 platform for packet processing offloads. Ideally, any configuration should work
-independently on the hardware installed, while allowing controllers to offload
+independently of the hardware installed, while allowing software to offload
 as much work as possible to the hardware.
 
 To achieve this goal, we selected five recent high-performance controllers and
@@ -63,11 +63,11 @@ with the right amount of detail. There are advertisements and marketing
 articles, which present rather vague terms and keywords, but usually do not
 give any idea of how the controller works. Some controllers have manuals for
 proprietary drivers from which the range of available features can be
-deducted, but we cannot tell apart the work done by the driver and the
-controller. Then there are the source codes of the Linux kernel and the
-\a{DPDK} that can give us a very good understanding of features which are
-utilized, but only after decoding the big codebase of relevant drivers.
-Finally, there are public datasheets and manuals for some controllers, that
+deduced, but we cannot tell apart the work done by the driver and the
+controller. Then there is the source code of the Linux kernel and the
+\a{DPDK} that can give us a very good understanding of the features which are
+utilized, but only after decoding the big codebase of the relevant drivers.
+Finally, there are public datasheets and manuals for some controllers that
 contain all the information needed, scattered in hundreds of pages with
 additional information which is not relevant.
 
@@ -75,45 +75,53 @@ One of the most painful problems of Linux is that its documentation cannot keep
 up with the immense speed of development. Usually, the initial idea is
 documented, presented on conferences and so on, but subsequent changes do not
 update the overall picture presented in the documentation. Therefore, the
-current state of a feature is hard to understand if one does not follow the
+current state of a feature is hard to understand if one does not follow its
 development from the beginning.
 
 The majority of information provided in this thesis is gathered from the source
 code directly or assembled from little pieces found in the kernel documentation
 and commit messages, providing the complete image of the current state of
-hardware offloading. It is, to our knowledge, the only documentation of its
+hardware offloading. It is, to our knowledge, the only document of its
 kind.
+
+In summary, this thesis contributes:
+\begin{itemize}
+	\item The review of the hardware offloading techniques in Chapter \ref{chap:offloading}.
+	\item The review of the features of the selected controllers in Chapter \ref{chap:nics}.
+	\item The overview of the Linux kernel with respect to the network hardware offloading in Chapter \ref{chap:linux}.
+	\item The proposal of the new subsystem in Chapter \ref{chap:rfc}.
+\end{itemize}
 
 \section{Scope}
 
 When talking about networking, we mostly limit ourselves to \a{IP} over Ethernet.
 We are not fond of supporting protocol ossification, but \a{IP} and Ethernet are
-unarguably the most widespread technology in the computer networking. As for the
-network layer protocol, watching \a{IPv6} having a hard time in replacing
-\a{IPv4}, it is hard to imagine completely different protocol taking over. For
+arguably the most widespread technologies in the computer networking. As for the
+network layer protocol, watching \a{IPv6} having hard time replacing
+\a{IPv4}, it is hard to imagine a completely different protocol taking over. For
 the Ethernet, the situation is curious. A lot of different communication
-standards over different mediums share the common Ethernet marketing label. It
-is the presence of common paradigms that allows network controllers to support
-multiple Ethernet standards at once, making a gradual transition to newer
+standards over different media share the common Ethernet marketing label. It
+is the presence of the common paradigms that allows the network controllers to support
+multiple Ethernet standards, making a gradual transition to newer
 standards possible.
 
-For the target market of high-performance networking, other communication
+For high-performance networking, other communication
 technologies are available (e.g.\ InfiniBand), but their support and adoption by
-operating systems is far from that of Ethernet and \a{IP}.
+the operating systems is far from that of Ethernet and \a{IP}.
 
 At the time of writing the thesis, the most recent released version of Linux
 kernel was 4.16 \cite{linux-kernel}. All the information about the kernel is
-based on this version. As the topic is still hot, we used also the David
+based on this version. As the topic is still hot, we also used the David
 Miller's net-next tree \cite{net-next} with the most recent updates for the networking subsystem to
 learn more about the controllers. However, we do not refer to commits from
 there, due to their experimental nature.
 
 \section{Linux Network Stack}
 
-As the thesis expects a brief orientation in the Linux networking stack,
-a condensed and very simplified overview follows. We skip a lot of details and
+As the thesis is requires the reader to orient briefly in the Linux networking stack,
+a condensed and very simplified overview follows. We skip a lot of detail and
 intermediate packet processing and focus on parts which are important to
-understanding the rest of the thesis. More comprehensive description can be
+understanding the rest of the thesis. A more comprehensive description can be
 found in \cite{lkn-iat}, but the only literature that is always up-to-date is
 the source code itself.
 
@@ -121,46 +129,46 @@ Let us explore the life of a datagram being transmitted using \a{UDP} over
 \a{IPv4} between two applications that run on Linux hosts. First, we will look
 at the \emph{egress} direction (sending the packet from the host to the
 network), then the \emph{ingress} direction (receiving a packet from the
-network to the host). Suppose that the datagram is small enough to be delivered
+network). Suppose that the datagram is small enough to be delivered
 in one \a{IP} fragment and let us ignore all the errors that might happen.
 
 When an application wants to communicate via the network in Unix-like operating
-systems, it opens a \emph{socket}. The socket is an entity in the kernel memory, that
+systems, it opens a \emph{socket}. The socket is an entity in kernel memory that
 can be controlled by the application using a handle (a file descriptor). The
 socket can be created using a system call of
-the same name. In our case, the socket is created with \macro|AF_INET| address
-family (\a{IPv4}), \macro|SOCK_DGRAM| socket type to communicate using
-datagrams and \macro|IPPROTO_UDP| protocol to encapsulate data in the \a{UDP}.
+the same name. In our case, the socket is created with the \macro|AF_INET| address
+family (\a{IPv4}), the \macro|SOCK_DGRAM| socket type to communicate using
+datagrams and the \macro|IPPROTO_UDP| protocol to encapsulate data in the \a{UDP}.
 
 Once created, the corresponding file descriptor is used as an argument to
 subsequent system calls, controlling the entity in the kernel. For the sender,
 no further setup is necessary, the socket is ready to send datagrams right away.
 The sending application prepares the data in a memory buffer, and requests them
-to be sent by the system calls \fnc|sendto| or \fnc|sendmsg|. (The system calls
-\fnc|write| or \fnc|send| can be used as well, but the socket must be
+to be sent by the \fnc|sendto| or \fnc|sendmsg| system calls. (The \fnc|write|
+or \fnc|send| system calls can be used as well, but the socket must be
 configured with the intended recipient first.)
 
 No matter which system call was used, it is handled by calling a \fnc|sendmsg|
-protocol callback. In our case, the \fnc|udp_sendmsg| function. To move
-packet-related data around the kernel, an \skb{} structure is created. This
+protocol callback -- in our case, the \fnc|udp_sendmsg| function. To move
+the packet-related data around the kernel, an \skb{} structure is created. This
 structure represents a data buffer in the networking subsystem and is used
-almost everywhere. Its lifetime is dynamic, thus a reference counting is
+almost everywhere. Its lifetime is dynamic, thus reference counting is
 employed.
 
 Once the \skb{} is created, it is filled with already known metadata and packet
 headers are constructed. An unexpected fact is that the \a{IP} header is
-filled in earlier than the \a{UDP} header. As \a{UDP} is closely tied to
+filled earlier than the \a{UDP} header. As \a{UDP} is closely tied to
 \a{IP}, the layered network model is not followed strictly in Linux.
 
 The next important decision to be made is routing the packet. Routing (among
-other things) selects the port, which will be used to push the packet out from
-the host. Ports are represented by \netdev{} structures in Linux. It is common
-for high-performance \a{NIC}s to present multiple ports to the system, then
-multiple \netdev s may correspond to a single physical controller.
+other things) selects the port that will be used to push the packet out from
+the host. Ports are represented by the \netdev{} structures in Linux. It is common
+for high-performance \a{NIC}s to present multiple ports to the system,
+multiple \netdev s may then correspond to a single physical controller.
 
-As there might be multiple applications trying to send data out from the
+As there might be multiple applications trying to send data from the
 selected device, the packets are not given directly to the driver. Instead,
-they are temporarily stored in queues in the \acrfull{TC} subsystem. A detailed
+they are temporarily stored in queues in the Traffic Control (\a{TC}) subsystem. A detailed
 look at the subsystem is provided in Section \ref{sec:tc}.
 
 The \a{NIC} usually utilizes circular queues to communicate with the host.
@@ -168,28 +176,28 @@ Packets are dequeued by the controller at its convenience. When there is an
 empty slot for a new packet (and such a packet is available), it is dequeued
 from \a{TC} and handed out to the driver.
 
-The \netdev{} structure, among a lot of things, carries a pointer to
-a \struct|net_device_ops| structure. This structure holds callbacks, which
+The \netdev{} structure, among many things, carries a pointer to
+a \struct|net_device_ops| structure. This structure holds callbacks that
 implement the network device interface for the rest of the system. One of the
-most important callbacks is \fnc|ndo_start_xmit|, that is called to transmit a packet.
+most important callbacks is \fnc|ndo_start_xmit|, which is called to transmit a packet.
 
 The driver usually needs to fill some descriptor structure for the packet,
-configuring the processing which will happen in the hardware. An obvious part
+configuring the processing that will happen in the hardware. An obvious part
 of the descriptor is the memory location of the buffer where the packet is
 stored. Once the descriptor is ready, its virtual ownership is transferred to
 the controller.
 
-But the processing for the sending host is not over yet. All the memory used by
+But the processing for the sending host is not over yet. The memory used by
 the packet must not be deallocated, because it is potentially accessed by the
 controller in the background. Therefore, the driver still holds one reference
 for the \skb{} and drops it only after the respective slot in the hardware
 queue is marked as empty.
 
-Before the packet reaches the kernel, the receiving application must be
+Before the packet reaches the kernel on the other host, the receiving application must be
 prepared to receive it. If it was not, the kernel would drop the packet as
 not wanted. The application does so by opening a socket and \emph{binding} it.
 When the socket is bound to an address and port, the kernel notes that packets
-sent to such a destination should be delivered to this particular socket.
+sent to this destination should be delivered to this particular socket.
 
 The ingress path of a packet is a bit simpler. First, the host needs to prepare
 memory for the received packets in advance. It allocates free pages and
@@ -198,25 +206,25 @@ packets.
 
 Once the controller decodes a network frame from the medium, it copies it to
 the prepared memory. As there is usually some processing in the controller
-itself, some metadata about the packet are already known. Some of the metadata
-are stored inside the descriptor, to potentially speed up the processing on the
+itself, some metadata about the packet is already known. Some of the metadata
+is stored inside the descriptor, to potentially speed up the processing on the
 host.
 
 Next, the controller marks the slot in the receive queue as ready. The driver
-picks it up and creates a \skb{} structure for the received packet. It can use
+picks it up and creates an \skb{} structure for the received packet. It can use
 some metadata from the descriptor to pre-fill fields of the \skb{}. Then the
 driver calls \fnc|netif_receive_skb| to give the received packet to the network
 stack.
 
-At first, the packet is parsed to identify some header fields, up to the
+First, the packet is parsed to identify some header fields, up to the
 transport layers. This is needed to support some early optimizations, which are
-further discussed in Section \ref{sec:rps}. In contrast to egress path, there
-is no buffering of packets in \a{TC}, all the packets are delivered
-immediately. In case of \a{IPv4}, delivery is realized by calling the
+further discussed in Section \ref{sec:rps}. In contrast to the egress path, there
+is no buffering of packets in \a{TC}, all packets are delivered
+immediately. In case of \a{IPv4}, the delivery is realized by calling the
 \fnc|ip_rcv| function.
 
-Similarly to egress, routing tables are consulted to decide, whether the
+Similarly to egress, the routing tables are consulted to decide whether the
 traffic is local. If so, the \a{UDP} handler is called, which enqueues the
-packet to a socket queue. There the packet waits until it is picked up by the
-application calling the system calls \fnc|recvmsg|, \fnc|recvfrom|, \fnc|recv|,
-or \fnc|read|.
+packet in the socket queue. There, the packet waits until it is picked up by the
+application calling the \fnc|recvmsg|, \fnc|recvfrom|, \fnc|recv|,
+or \fnc|read| system calls.

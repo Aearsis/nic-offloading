@@ -28,20 +28,20 @@
 % 
 
 The controller ships in many variants, all of which enable a subset of
-functions. While that probably allows Chelsio to set a more suitable pricing,
-it is quite confusing. For example, we cannot say for sure hat any two features
+functions. While that probably allows Chelsio to set more suitable pricing,
+it is quite confusing. For example, we cannot say for sure that any two features
 described here can be used at the same time.
 
 The architecture of the \a{ASIC} is best described in a paper published by
-Chelsio \cite{chelsio-t6}, it does not however go into much detail. As the
+Chelsio \cite{chelsio-t6}, it however does not go into much detail. As the
 vendor refused to share any information with us, we have to resort to guessing.
-A lot of details are exposed in the manual for the proprietary driver extension
-and configuration utility \cite{chelsio-uw}. Still, both these manuals only
-explain the capabilities of the controller from a user's point of view, not the
+Many details are exposed in the manual for the proprietary driver extension
+and configuration utility \cite{chelsio-uw}. Still, both manuals only
+explain the capabilities of the controller from the user's point of view, not the
 hardware capabilities in detail. For this kind of information, we had to
 carefully examine the source code of the Linux kernel driver.
 
-The driver in Linux kernel, \sw{cxgb4} is shared for all controllers from the
+The driver in Linux kernel, \sw{cxgb4}, is shared for all controllers from the
 Terminator series, starting from Terminator 4. Therefore, we know the union of
 the capabilities of all these controllers, because we cannot differentiate
 them. As we do not expect features to be removed in newer versions, we suppose
@@ -52,84 +52,83 @@ to 256 virtual instances, mapped to virtual or physical functions. Even though
 the controller can identify itself as 8 physical functions, only the first
 4 are capable of \a{SR-IOV}. With the factory firmware, each of them can
 control 16 virtual functions. However, some controller variants (probably
-differing only in firmware) can be configured up to 62 virtual functions per
-each, giving us the maximum of 256 functions in total. Unfortunately, neither
+differing only in firmware) can be configured with up to 62 virtual functions per
+physical function, giving us the maximum of 256 functions in total. Unfortunately, neither
 the available documents nor the source code gives hints about the inner switch
 functionality.
 
 \subsection{Stateless Offloads}
 
-The controller supports all of the mentioned stateless offloads. An interesting
+The controller supports all of the stateless offloads. An interesting
 requirement is placed on the software in case of \a{IPv4} header checksum for
 \a{LSO} of \a{MAC}-in-\a{UDP} tunnels -- the driver has to compute the checksum
 of the outer \a{IPv4} header without the total length field, which is different
 for the last segment created.
 
 For the receive checksum, the controller is capable of computing the checksum
-of a received packet in a generic way, as described in section
-\ref{sec:linux-csum}. It does so as the first controller from the examined
-ones.
+of the received packet in a generic way, as described in Section
+\ref{sec:linux-csum}. It does so as the first controller from our list.
 
 As for the tunnelling support, it seems that \a{VXLAN} and Geneve is supported
-for both offloads. Even though \a{GRE} is defined as one of the constants for
+for both checksum and segmentation offloads. Even though \a{GRE} is defined as one of the constants for
 supported tunnels, it is not used elsewhere in the driver code.
 
 \subsection{Match-Action Offload}
 
 There is a step in the pipeline where custom classification is performed and
 programmable actions are taken. The controller always contains a TCAM to
-install up to 496 rules, and optionally also a memory dedicated for half
+install up to 496 rules, and optionally also memory dedicated for half
 a million hashed rules. The action part might seem a bit constrained at first,
 but in the end it is quite powerful.
 
 The match-action pipeline starts with a fixed parser, extracting a similar set
-of fields we have already seen -- \a{MAC} addresses, Ethertype, 2 layers of
-\a{VLAN}s, \a{IP} addresses, \a{TCP} and \a{UDP} ports. In the kernel, all the
-available fields are represented in the structure
-\linuxstruct{drivers/net/ethernet/chelsio/cxgb4/cxgb4.h}{1009}{ch\_filter\_tuple}.
+of fields we have already seen -- the \a{MAC} addresses, Ethertype, 2 layers of
+\a{VLAN}s, \a{IP} addresses, \a{TCP} and \a{UDP} ports. In the kernel, the
+available fields are represented in the
+\linuxstruct{drivers/net/ethernet/chelsio/cxgb4/cxgb4.h}{1009}{ch\_filter\_tuple} structure.
 
 From these fields a compressed vector is constructed to be matched on. The
-compressed vector contains only the \a{IP} addresses and L4 ports, extended with up
+compressed vector contains only the \a{IP} addresses and the L4 ports, extended with up
 to 36 bits of the fields from above. It is very important to note that the
-selection of bits creating the match vector is global, and changeable only with
-the driver being reloaded.
+selection of bits creating the match vector is global and changeable only by
+reinitializing the controller.
 
 The compressed vector is used to look up an entry in a table, be it a \a{TCAM} or
-hash table. In both cases, the software representation of the entry is a structure
-\linuxstruct{drivers/net/ethernet/chelsio/cxgb4/cxgb4.h}{1042}{ch\_filter\_specification}.
-From its layout, we can clearly see all the possibilities.
+a hash table. In both cases, the software representation of the entry is the
+\linuxstruct{drivers/net/ethernet/chelsio/cxgb4/cxgb4.h}{1042}{ch\_filter\_specification} structure.
+From its layout, we can clearly see the possibilities.
 
-An interesting difference from other vendors is that there is a fixed number of
+An interesting difference from the other vendors is that there is a fixed number of
 slots for filters, and the slots are allocated by the software. The order of
 filters is not arbitrary, as filters with lower indices have higher priority.
 
 For matched flows, exactly one of three actions can be taken: pass, drop or
 switch. When the packet is passed, its receive queue can be selected (otherwise
-it is selected by \a{RSS} automatically). The possibilities open with the switch
-action.  In essence, the switch action instructs the controller to loopback
-the packet to a port. However, it can modify some header fields along. Namely,
-it can alter \a{MAC} addresses, push, change, or pop VLAN tag and/or modify \a{IP}
-addresses and \a{L4} ports. That means the controller is capable of offloading
+it is selected by \a{RSS} automatically). More possibilities open with the switch
+action.  First, the switch action instructs the controller to loopback
+the packet to a port. However, it can also modify some header fields. Namely,
+it can alter the \a{MAC} addresses, push, change, or pop the VLAN tag and/or modify the \a{IP}
+addresses and the \a{L4} ports. That means the controller is capable of offloading
 e.g.\ routing with stateless \a{NAT}.
 
 \subsection{Other Offloads}
 
 Chelsio emphasizes a lot of other offloads the controller supports. The range
-of additional functions the controller features:
+of additional functions the controller features is:
 
 \begin{itemize}
-\item \a{TCP}\acrfull{TOE} % HACK
-\item \acrfull{RDMA} over \a{iWARP} offload
-\item Both target and initiator offload of \a{iSCSI} and \a{NVMe-oF}
-\item \a{FCoE} initiator offload
-\item Crypto offloads (IPSec, \a{TLS}, \a{SMB}, \dots)
-\item Open vSwitch offload
-\item Bonding and active failover offload
+\item \a{TCP}\acrfull{TOE}, % HACK
+\item \acrfull{RDMA} over \a{iWARP} offload,
+\item Both target and initiator offload of \a{iSCSI} and \a{NVMe-oF},
+\item \a{FCoE} initiator offload,
+\item Crypto offloads (IPSec, \a{TLS}, \a{SMB}, \dots),
+\item Open vSwitch offload,
+\item Bonding and active failover offload.
 \end{itemize}
 
 If the \a{NIC} driver had to support all of these, the driver would have to be
 an ugly hybrid driver spread across the whole kernel. It is not the case,
-instead, the upper-layer drivers (such as \a{iSCSI} kernel implementation)
+instead, the upper-layer drivers (such as the \a{iSCSI} kernel implementation)
 communicate with the controller through the \a{NIC} driver using a network-like
 protocol, therefore the \a{NIC} driver itself does not care much about the
 extended features.

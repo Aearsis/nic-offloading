@@ -1,4 +1,5 @@
 \chapter{Hardware Offloading in Linux}
+\label{chap:linux}
 
 Before we dive into how Linux supports various offloading techniques, how they
 are configured and implemented, let us recall the development
@@ -548,17 +549,17 @@ queue, preventing reorders.
 \section{Express Data Path}
 \label{sec:xdp}
 
-When talking about high-performance packet processing in Linux, we cannot avoid
-mentioning \acrfull{XDP}. The idea of \a{XDP} is to allow the user to inject an
-arbitrary program to process packets early in the stack, even before \skb{}
+When talking about high-performance packet processing in Linux, we must
+mention the \acrfull{XDP}. The idea of \a{XDP} is to allow the user to inject an
+arbitrary program to process packets early in the stack, even before the \skb{}
 structure is allocated. The expected use cases include early packet dropping
 for \a{DoS} protection or wire-speed load-balancing or forwarding.
 
-Obviously, running a user-specified machine code in the kernel context is
-usually considered a bug. In the case of \a{XDP}, a special restricted
+Obviously, allowing a user-specified machine code to run in the kernel context is
+usually considered a security flaw. In the case of \a{XDP}, a special restricted
 instruction set is used -- the \acrlong{BPF}. \a{BPF} is designed to be safe when
 executed in the kernel context. Most notably, \a{BPF} programs cannot contain
-backward jumps and therefore they always ends after a finite number of
+backward jumps and therefore they always end after a finite number of
 instructions. Also, the instruction set is simplified enough so that programs
 can be verified whether they access only valid memory.
 
@@ -570,7 +571,7 @@ to the sniffing socket.
 
 In Linux, the original \a{BPF} instruction set was enhanced to better suit modern
 processor architectures. Also, support for data structures like arrays, hash
-tables or tries was added. Actually, the instruction set no longer reminds the original \a{BPF},
+tables, and tries was added. Actually, the instruction set no longer resembles the original \a{BPF},
 but the name has not changed. Sometimes, the enhanced set is called eBPF while
 the original cBPF (classic \a{BPF}). In the Linux context, \a{BPF} almost
 exclusively refers to eBPF.
@@ -580,8 +581,8 @@ instruction set. Therefore, running \a{BPF} programs does not come with any
 performance penalty. The compiler handles cBPF programs as well, by
 transcribing them to eBPF first.
 
-\a{XDP} programs are invoked as soon as a packet is received by the driver,
-before \skb{} structure is allocated. That means that \a{XDP} needs to be
+The \a{XDP} programs are invoked as soon as a packet is received by the driver,
+before the \skb{} structure is allocated. That means that \a{XDP} needs to be
 explicitly supported by the driver, even though it does not depend on the hardware at all.
 The program executed in \a{XDP} can decide what to do with the packet using return codes.
 It can just pass the packet, in which case it is processed as usual. The packet
@@ -745,6 +746,7 @@ the purpose, the user is encouraged to implement a new one.
 	\caption[Example \qdisc{} tree]{The composition of \qdisc{}s. Filter block attached to the
 	\texttt{prio} \qdisc{} is used to select the inner \qdisc{}. Inspired by
 	figures in \cite{diffserv-linux}.}
+	\label{fig:qdisc-tree}
 \end{figure}
 
 Filters are invoked to look at the packet and decide whether the packet

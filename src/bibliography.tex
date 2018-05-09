@@ -14,12 +14,12 @@
 
 % Break line before URL
 \DeclareFieldFormat{formaturl}{\newline #1}
-\newbibmacro*{url+urldate}{%
+\newbibmacro*{url+urldate}{\footnotesize%
+  \iffieldundef{url}{}{%
   \printtext[formaturl]{\printfield{url}}%
-  \iffieldundef{urlyear}
-    {}
-    {\setunit*{\addspace} \printurldate}}
+  \iffieldundef{urlyear}{}{\setunit*{\addspace} \printurldate}}}
 
+\DeclareNameAlias{default}{family-given/given-family}
 
 %%% Generate the bibliography. Beware that if you cited no works,
 %%% the empty list will be omitted completely.

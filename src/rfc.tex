@@ -72,8 +72,6 @@ will be a subject to discussion at the networking mailing lists before a patch
 will be created. Also, it is not meant as ``all or nothing'' -- we present many
 ideas from which only a subset might be implemented in the end.
 
-\iltodo{Review language above.}
-
 \section{The Big Picture}
 
 The proposed subsystem is well separated -- it is not a module of
@@ -391,8 +389,6 @@ a non-intrusive way. This has the advantage of exposing our own userspace
 \a{API} separate from \a{TC}, while reusing as much in-kernel infrastructure as
 possible without sacrificing any of the goals. For example, we can reuse the
 \fnc|ndo_setup_tc| callback up to the point where blocks are examined.
-
-\iltodo{Review the rest of this section below.}
 
 As the subsystem is very generic, its functionality naturally overlaps with
 some more specific features of the Linux kernel. For example, it can

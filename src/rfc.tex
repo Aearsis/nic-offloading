@@ -196,7 +196,7 @@ iterations. This limit is rather high and reaching it emits a warning in
 a rate-limited manner. To prevent malformed packets from reaching the system,
 the packet trapped in such loop is dropped.
 
-\subsection{Matching modes}
+\subsection{Matching Modes}
 
 Every table uses one of the predefined matching modes on the header fields. Those we
 propose are inspired by options available in the hardware pipelines:
@@ -297,7 +297,7 @@ size can be changed at runtime, but the resize action can result in the offload
 being stopped.
 
 Second, action chains are stored separately from flow matching. When
-a flow is matched, an action chain ID is obtained. The chain ID is then used to
+a~flow is matched, an action chain ID is obtained. The chain ID is then used to
 do another lookup in a hash table of action chains. This allows for two major
 optimizations: identical chains can be merged into one and classification can
 be offloaded separately from action execution.
@@ -341,21 +341,21 @@ offloaded. Then it can hand out the packet to the controller.
 The subsystem allows partial offloading of a single table. As already said, the
 controller can perform only classification, passing the action chain ID to the
 software out of band. However, the subsystem in principle allows to offload
-a subset of flows from a table, provided that the driver ensures the policy is
+a~subset of flows from a table, provided that the driver ensures the policy is
 preserved. For example, the driver can evaluate that the ``IP 5-tuple blacklist
 filter'' is idempotent for missed packets, thus can be performed both in the
 hardware and the software. Then, offloading a subset of rules to the hardware
-serves as a optimization.
+serves as an optimization.
 
 However, such usage is discouraged, because the driver would have to
 implement the algorithm to select offloaded flows, moving the complexity to
 individual drivers. The encouraged solution is to offload tables of limited
 size only, forcing the user to implement the rule aging in the upper layers.
 
-\section{A note on OpenFlow}
+\section{Acting as an OpenFlow Backend}
 
 A reader familiar with OpenFlow can notice that the subsystem can serve as
-a backend to implement OpenFlow-compatible software switch. Indeed, this was
+a~backend to implement OpenFlow-compatible software switch. Indeed, this was
 one of the design goals of the subsystem. If the proposed subsystem was
 implemented, one would just need to write a daemon for communication with the
 \a{SDN} controller and translate it into calls of the proposed subsystem
@@ -410,7 +410,7 @@ One could argue that for generic, low-level packet processing the kernel
 already contains \acrfull{XDP}. However, offloading classification is
 considerably simpler than running an arbitrary \a{BPF} program.
 
-\section{Configurable parser}
+\section{Configurable Parser}
 \label{rfc:parser}
 
 This whole section is proposed as an optional extension. It can be implemented
@@ -434,7 +434,7 @@ Header fields describe how to extract a field value from a header instance.
 
 Packet parsing would be similar to table processing. The parser
 starts with a header defined by the link layer protocol -- for us, Ethernet. If there is
-a header field which needs to be extracted from the Ethernet header, it is
+a~header field which needs to be extracted from the Ethernet header, it is
 extracted. Then, a mask-value match is performed on predefined fields to
 determine the next header. If no next header matches, the parsing is over.
 
@@ -445,9 +445,9 @@ would end previously. This is necessary to avoid changing the definition of
 well-known fields.
 
 If there are no unknown fields allowed in a table, the driver does not need to worry
-about the configurable parser. If there are some, the driver can have a look
+about the configurable parser. If there are some, the driver can have a~look
 on the parser tree definition. In the simple case, the field would be just
-a previously-unknown field of a known header. Several controllers feature
+a~previously-unknown field of a known header. Several controllers feature
 matching on a whole header or arbitrary part of it, enabling offload of those
 fields. In the most complicated case, new parser states would be defined. If
 the controller features a programmable parser, the driver can can program it
@@ -513,9 +513,9 @@ userspace to look for cycles faster.
 \section{Acting as a P4 Backend}
 
 As the subsystem behavior closely follows the current hardware, we can use the existing
-tools for programming the hardware pipelines. The \a{P4} language \cite{P4} serves exactly
+tools for programming the hardware pipelines. The \a{P4} language~\cite{P4} serves exactly
 this purpose. It allows a system administrator to define the behavior of
-a pipeline in a restricted imperative language. The program can then be compiled
+a~pipeline in a restricted imperative language. The program can then be compiled
 for a specific hardware pipeline. The compilers can already handle situations
 where pipelines are partially programmable.
 

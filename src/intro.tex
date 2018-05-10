@@ -110,9 +110,9 @@ technologies are available (e.g.\ InfiniBand), but their support and adoption by
 the operating systems is far from that of Ethernet and \a{IP}.
 
 At the time of writing the thesis, the most recent released version of Linux
-kernel was 4.16 \cite{linux-kernel}. All the information about the kernel is
+kernel was 4.16~\cite{linux-kernel}. All the information about the kernel is
 based on this version. As the topic is still hot, we also used the David
-Miller's net-next tree \cite{net-next} with the most recent updates for the networking subsystem to
+Miller's net-next tree~\cite{net-next} with the most recent updates for the networking subsystem to
 learn more about the controllers. However, we do not refer to commits from
 there, due to their experimental nature.
 
@@ -122,7 +122,7 @@ As the thesis is requires the reader to orient briefly in the Linux networking s
 a condensed and very simplified overview follows. We skip a lot of detail and
 intermediate packet processing and focus on parts which are important to
 understanding the rest of the thesis. A more comprehensive description can be
-found in \cite{lkn-iat}, but the only literature that is always up-to-date is
+found in~\cite{lkn-iat}, but the only literature that is always up-to-date is
 the source code itself.
 
 Let us explore the life of a datagram being transmitted using \a{UDP} over
@@ -177,7 +177,7 @@ empty slot for a new packet (and such a packet is available), it is dequeued
 from \a{TC} and handed out to the driver.
 
 The \netdev{} structure, among many things, carries a pointer to
-a \struct|net_device_ops| structure. This structure holds callbacks that
+a static instance of \struct|net_device_ops| structure. This structure holds callbacks that
 implement the network device interface for the rest of the system. One of the
 most important callbacks is \fnc|ndo_start_xmit|, which is called to transmit a packet.
 

@@ -3,8 +3,8 @@
 We succeeded in our goal to design a mechanism that would allow the user to
 define a policy to process packets in the kernel, while allowing to offload the
 policy into compatible \a{NIC}s. Rather than following the initial plan to pick
-a few common features and create a specific mechanism for them, we
-proposed a generic mechanism to offload the match-action processing.
+a~few common features and create a specific mechanism for them, we
+proposed a~generic mechanism to offload the match-action processing.
 
 We did so after carefully studying the pipeline of five high-end \a{NIC}s.
 The subsystem we proposed is descriptive enough to represent the majority of
@@ -21,7 +21,7 @@ offloaded to hardware, and thanks to a different approach it resolves some
 serious problems of the \a{TC} offload.
 
 It is not the first work of its kind. Most notably, John Fastabend proposed
-the Flow API \cite{flow-api}, which might seem very similar. The
+the Flow API~\cite{flow-api}, which might seem very similar. The
 Flow API, however, serves to precisely describe a fixed pipeline of the
 controller and to allow the userspace to program it directly, bypassing the
 kernel. In contrast, our subsystem starts with doing the work in the kernel and
@@ -36,7 +36,6 @@ create the tables and the user fills them.
 To support our design, we created a proof-of-concept implementation, which
 is attached to the electronic version of the thesis. It is also available
 on Github\footnote{\href{https://github.com/Aearsis/mat}{\texttt{https://github.com/Aearsis/mat}}}.
-
 The documentation of the implementation can be found in Appendix
 \ref{app:doc}. The demonstration shows that the subsystem can be created, can
 be used to process packets and that the drivers can offload its work.

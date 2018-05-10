@@ -5,7 +5,7 @@ Before we dive into how Linux supports various offloading techniques, how they
 are configured and implemented, let us recall the development
 model of the networking stack in Linux kernel. Linux
 community does not publish any guidelines for network device vendors like
-e.g.\ Microsoft does with its \acrfull{NDIS} \cite{NDIS}. In the Windows world,
+e.g.\ Microsoft does with its \acrfull{NDIS}~\cite{NDIS}. In the Windows world,
 vendors create controllers with the driver interface in mind, and are
 restricted to features specified by \a{NDIS}. In the Linux world, both the
 drivers and the driver interfaces follow the design of the hardware. The
@@ -255,7 +255,7 @@ depend on the inner \a{TCP} packet at all. Thus, the outer checksum can be
 computed inexpensively in the software from the headers only, and the hardware
 checksum offload can be used to compute the expensive inner checksum. This
 technique is called Local Checksum Offload and was implemented by Edward
-Cree \cite{linux-lco}.
+Cree~\cite{linux-lco}.
 
 \subsection{Segmentation Offload}
 
@@ -362,7 +362,7 @@ segment of the different size.
 Unfortunately, the \a{IPv4} ID will be the same for all packet segments.
 However, \a{TCP} streams require \a{IPv4} packets to carry the ``Don't
 Fragment'' flag, therefore the ID should not be examined by any network device,
-as proposed in RFC 6864 \cite{RFC6864}.
+as proposed in RFC~6864~\cite{RFC6864}.
 
 Because the segmentation is only partially offloaded, this feature is called
 Partial \a{GSO}. It is controlled by the \macro|NETIF_F_GSO_PARTIAL| feature flag.
@@ -371,7 +371,7 @@ Partial \a{GSO}. It is controlled by the \macro|NETIF_F_GSO_PARTIAL| feature fla
 
 In Linux, full \a{TCP} stack offload is not supported at all. It is not just
 unsupported, it is actively rejected. There are many reasons for that,
-summarized in the article about \a{TOE} at Linux Foundation Wiki \cite{lf-toe}.
+summarized in the article about \a{TOE} at Linux Foundation Wiki~\cite{lf-toe}.
 The most relevant reasons for doing so include low flexibility in supporting
 the solution, complicated updates and possible security flaws.
 
@@ -484,7 +484,7 @@ target \a{CPU} for a flow in that layer only changes when no packets of that flo
 waiting in the current \a{CPU} queue. The size of the local table is
 configurable through a the \Verb|rps_flow_cnt| \texttt{sysfs} file in the queue
 directory. A more detailed description can be found in the message of the commit
-implementing \a{RFS} \cite{linux-rfs}.
+implementing \a{RFS}~\cite{linux-rfs}.
 
 As we have seen, the controllers usually feature some classification mechanism
 which allows to select the receive queue based on packet headers, and therefore could be
@@ -564,7 +564,7 @@ instructions. Also, the instruction set is simplified enough so that programs
 can be verified whether they access only valid memory.
 
 The initial usecase of \a{BPF} was to allow packet sniffers to filter packets
-before they are passed to userspace \cite{bpf-usenix}. The user attaches
+before they are passed to userspace~\cite{bpf-usenix}. The user attaches
 a \a{BPF} program to a socket, the kernel verifies the program and runs it
 for every received packet. Depending on the result code, the packet is copied
 to the sniffing socket.
@@ -630,7 +630,7 @@ all the available literature, Queue Disciplines are called \qdisc{}s for short. 
 will stick to this convention.
 
 Let us consider the egress direction first. There, the \a{TC} subsystem serves as the main buffer
-between the applications and the network interface. Whenever a packet is to be sent
+between the applications and the network interface. Whenever a~packet is to be sent
 by an application, it is \emph{enqueued}. When the driver is ready to emit
 a packet (there is an empty slot in the hardware queue), a packet is
 \emph{dequeued} from \a{TC}. The implementation of these two operations is what
@@ -745,7 +745,7 @@ the purpose, the user is encouraged to implement a new one.
 	\centering
 	\caption[Example \qdisc{} tree]{The composition of \qdisc{}s. Filter block attached to the
 	\texttt{prio} \qdisc{} is used to select the inner \qdisc{}. Inspired by
-	figures in \cite{diffserv-linux}.}
+	figures in~\cite{diffserv-linux}.}
 	\label{fig:qdisc-tree}
 \end{figure}
 
@@ -769,7 +769,7 @@ compared to combining other classifiers.
 We would like to mention the \texttt{flower} classifier as well. This
 classifier uses the kernel flow dissector to extract the header fields and allows
 to match on them. Initially it was called \texttt{openflow}, because it was
-supposed to match on fields defined by the OpenFlow protocol \cite{openflow}. As
+supposed to match on fields defined by the OpenFlow protocol~\cite{openflow}. As
 there is no reason to limit the classifier to these fields, it is extensible with
 other common header fields.
 
@@ -814,7 +814,7 @@ kernel.
 
 For example, there is the \texttt{mirred} action, which can perform packet
 mirroring or redirection. It can be used both to make the packet appear on
-ingress of a different network device, or to be sent out with one.
+ingress of a~different network device, or to be sent out with one.
 
 As a special action there is \texttt{gact}, the generic action. It does
 nothing except returning a specified action code, emulating the original
@@ -862,7 +862,7 @@ All the techniques described below are controlled by a single feature flag,
 disable the behavior -- enabling it might not change anything.
 
 At first, \a{TC} offload was limited to offloading transmit priority scheduling
-to support \a{QoS} \cite{linux-hw-qos}. The network device gained a new
+to support \a{QoS}~\cite{linux-hw-qos}. The network device gained a new
 callback, \fnc|ndo_setup_tc|, which was called to setup a number of traffic
 classes. The driver then configured the hardware scheduler and the stack with
 a mapping of classes to transmit queues. The stack then used the priority
@@ -947,7 +947,7 @@ limited and expensive resources available for offloading the \a{TC} rules, this
 independence started to pose a problem.
 
 The issue was solved recently by Jiří Pírko with the introduction of shared filter
-blocks \cite{linux-shared-blocks}. The patch introduces a new, global, runtime
+blocks~\cite{linux-shared-blocks}. The patch introduces a new, global, runtime
 entity of \a{TC} configuration -- blocks. These fit in between \qdisc{}s and
 filters. When no shared block is specified, a new private one is created for the
 \qdisc{}, preserving backwards compatibility. In the other case, two or more
@@ -955,7 +955,7 @@ filters. When no shared block is specified, a new private one is created for the
 
 The boilerplate needed to support \a{TC} offloading, however, got more
 complicated. Instead of handling events directly, the driver must register
-a callback on a newly-created block. The callback will then receive events from
+a callback on a~newly-created block. The callback will then receive events from
 inside the block. Also, a future idea is that binding a block will replay all
 events, which is not yet supported. Instead, binding a block with any offloaded
 rule is forbidden.\footnote{Which is a bug confirmed by the author. Any
@@ -965,6 +965,6 @@ When it comes to hardware resource utilization, there is still an important
 unresolved problem. When the rules are to be compiled into table entries, it is
 usually necessary to fix the table dimensions in advance. For example the Flow
 Tables present in Mellanox ConnectX controller series must be allocated with
-a maximum number of rows in mind, and the Flow Groups must have fixed masks.
+a~maximum number of rows in mind, and the Flow Groups must have fixed masks.
 Currently, the driver relies on grouping similar rules together and heuristics
 in table size allocation.

@@ -11,7 +11,7 @@ principles and features.
 
 The silicon was announced in 2014. It is embedded in adapters from Intel and
 Lenovo, plus adapters from less known vendors from China. As all other controllers from
-Intel, its specification \cite{XL710} is publicly available.
+Intel, its specification~\cite{XL710} is publicly available.
 
 The Linux kernel driver for this controller is called \sw{i40e}, corresponding
 to the 40 Gbps speed. The patches introducing the driver were posted even
@@ -70,7 +70,7 @@ The traffic to host is delivered through one of 1536 available queue pairs
 (a transmit and a receive queue form a pair). The distribution of queues is
 persistently configured for physical functions, which can then dynamically
 assign them to virtual functions at runtime. While one physical function can be
-assigned all 1536 queues, virtual functions are limited to obtaining up to 16 queues.
+assigned all 1536~queues, virtual functions are limited to obtaining up to 16 queues.
 
 The internal switch architecture does not work directly with functions but with
 entities called \glspl{VSI}, which represent generic packet destinations or

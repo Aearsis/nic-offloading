@@ -9,7 +9,7 @@ through 8 lanes of \a{PCIe} 2.0. To the network, it can be connected through
 2 independent interfaces. Compared to its older sibling, 82598, it supports
 \a{LRO} and \a{SR-IOV} (among other improvements).
 
-Its full specification \cite{82599} is publicly available for download from the
+Its full specification~\cite{82599} is publicly available for download from the
 vendor web portal. The specification covers both the supported features and their
 configuration interface for the controller driver. Unless otherwise specified,
 the information in this chapter is sourced from there.
@@ -118,7 +118,7 @@ Let us walk through the individual tables in the pipeline.
 
 \noindent When none of the previous filters matched and selected the receive queue, \a{DCB}
 and \a{RSS} takes place depending on the configuration. When the \a{DCB} mode
-is enabled, it extracts the 2 or 3-bits of the \a{PCP} field from the \a{VLAN}
+is enabled, it extracts the 2 or 3 bits of the \a{PCP} field from the \a{VLAN}
 header (\a{DCB} assumes all packets are \a{VLAN} tagged) to select
 a \emph{Traffic Class Index}. \a{RSS} computes the flow hash by a fixed
 algorithm (with configurable random key) and selects a configurable number of
@@ -160,13 +160,13 @@ taken out from the buffers and sent to the \a{MAC} for transmission.
 
 Queues are distributed between queue pools (virtual functions) and traffic
 classes. When there are multiple queues dedicated to one traffic class inside
-a pool, they are always dequeued in a frame-by-frame round-robin order. Queues
+a~pool, they are always dequeued in a frame-by-frame round-robin order. Queues
 are distributed between classes to reflect class priority 
 (high-priority classes have fewer queues than low-priority classes, because less
 traffic is expected to be buffered.)
 
 The scheduling algorithms differ for every mode of operation, and their
-description here would be a mere copy of \cite{82599}, section 7.2.1, and
+description here would be a mere copy of~\cite{82599}, Section 7.2.1, and
 therefore is omitted.
 
 From the offloading point of view, in majority of modes the controller employs
@@ -180,7 +180,7 @@ security offloads: LinkSec (MACsec) and IPSec. For both of them, the software
 must establish the Security Associations itself, and then install them to the
 hardware tables. The controller is capable of offloading AES-128. Both
 authentication and encryption is supported, provided they are using the same
-\a{SA} (IPSec only). \sect{7.8 and 7.12}
+\a{SA} (IPSec only). \sect{7.8, 7.12}
 
 Another inline functionality that is emphasized in the specification is the
 \a{FCoE} support. The controller offers additional functions like Fibre

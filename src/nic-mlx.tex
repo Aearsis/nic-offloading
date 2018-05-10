@@ -9,14 +9,14 @@ This controller from Mellanox was announced in late 2014. It is a combined
 network controller for both Ethernet and InfiniBand. The fourth version is not
 the most recent one, as Mellanox already produces ConnectX-5 and develops
 ConnectX-6. We decided to include ConnectX-4 mainly due to the
-\acrfull{PRM} \cite{mlx-prm} being public. However, the open driver for
+\acrfull{PRM}~\cite{mlx-prm} being public. However, the open driver for
 ConnectX-5 is already merged into the Linux kernel, and we will try to provide
 updated information where applicable.
 
 Counterintuitively, the controller is driven by the \sw{mlx5\_core} driver in the
 Linux kernel, while the \sw{mlx4} driver supports controllers up to ConnectX-3.
 The rationale seems to be that ConnectX-3 is a 40 Gbps controller, hence the
-suffix 4.
+suffix~4.
 
 For complete configuration, an external collection of tools is needed. The
 kernel drivers are dedicated to controlling individual network functions, not
@@ -40,13 +40,13 @@ applicable), enabling \a{SR-IOV} and the number of functions created.
 Interestingly, the controller is capable of running one Ethernet and one
 InfiniBand port.
 
-\subsection{Switch layout}
+\subsection{Switch Layout}
 
-While the PRM \cite{mlx-prm} provides enough information about the processing
+While the PRM~\cite{mlx-prm} provides enough information about the processing
 pipeline, it does not describe the operation of the packet processing before
 the packet reaches the \a{PCI} function. A brief explanation was provided in
 a cover letter for patches introducing the \a{SR-IOV} support for the kernel driver
-by Or Gerlitz \cite{lwn-mlx-sriov}.
+by Or Gerlitz~\cite{lwn-mlx-sriov}.
 
 The controller has two layers of switches. The first one, \acrfull{MPFS}, is
 responsible for switching unicast traffic among physical functions. Broadcast
@@ -70,7 +70,7 @@ own Vport context. Whenever the context is updated by a virtual function, the
 driver of physical function receives an event. It can check the validity and
 conformation to any local policy and then update the configuration accordingly.
 
-\subsection{The Pipeline}
+\subsection{Pipeline}
 \label{mlx:pipeline}
 
 The pipeline is made of simple elements which are chained together. For any of
@@ -127,7 +127,7 @@ packets that are subject to \a{RSS} are delivered to \a{TIR} performing
 \a{RSS}. If the tables are misconfigured, the result of the hash function is
 undefined.
 
-The receive queues are created dynamically as well. The responsibility of a Receive
+The receive queues are created dynamically as well. The responsibility of a~Receive
 Queue is to store the packet and report to a Completion Queue, which may result
 in interrupting the host. Unexpectedly, the Receive Queue might strip
 a \a{VLAN} tag from the received packet first. We could not find this
@@ -142,7 +142,7 @@ scheduling.
 
 One would expect a match-action pipeline to be implemented on egress as well.
 It does exist, but at the egress of the \a{E-Switch}. Therefore, it is not
-covered in the PRM \cite{mlx-prm}. In the source code of the Linux driver, we
+covered in the PRM~\cite{mlx-prm}. In the source code of the Linux driver, we
 can see the rules being constructed in
 \linuxfnc{drivers/net/ethernet/mellanox/mlx5/core/en\_tc.c}{2386}{parse\_tc\_fdb\_actions}.
 

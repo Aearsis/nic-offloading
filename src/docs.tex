@@ -2,7 +2,7 @@
 \label{app:doc}
 
 The attached source code contains an implementation of the subsystem under
-a working title Match-Action Tables, MAT for short. In this appendix, we would
+a~working title Match-Action Tables, MAT for short. In this appendix, we would
 like to document the source code from a high-level point of view. We do not
 discuss implementation details, as they are documented in the source code.
 Also, we do not discuss the functionality itself, as it closely follows the
@@ -97,7 +97,7 @@ implementation is linked to a single archive \texttt{libmat.a} to represent
 Finally, the archive contains a few test scenarios to demonstrate how the
 subsystem is expected to be used. As already mentioned, the test scenarios
 interact with the kernel from both userspace and hardware ends. Let us have
-a look at them first.
+a~look at them first.
 
 \subsection{Tests}
 
@@ -266,7 +266,7 @@ identified by the \a{NIC}s as the Ethertype of the last \a{VLAN} tag, or the
 \a{MAC} header directly if no \a{VLAN} tags are present. As such header field can
 be attached to at most one parser, we define the Ethertype as a standalone
 parser and make the Ethernet and \a{VLAN} parsers ``look ahead'', out of the
-area that is skipped by parsing the corresponding header. For illustration, have a look at
+area that is skipped by parsing the corresponding header. For illustration, have a~look at
 Figure \ref{fig:ethertype-parser}.
 
 \begin{figure}

@@ -49,15 +49,15 @@ yet provide a good level of reliability in indicating data corruption.
 At the link layer the \a{NIC} usually computes the checksum itself, because it
 is well aware of the protocol being used. In the case of Ethernet the
 checksum is called \emph{Frame Check Sequence} and is transmitted at the end of
-the frame, after the payload \cite{ethernet}. Therefore, the \a{NIC} is able to
+the frame, after the payload~\cite{ethernet}. Therefore, the \a{NIC} is able to
 compute the intermediate value of the checksum while sending and finish the frame
 by the final checksum. Similarly, on the ingress path, after a frame is received
 completely (with the checksum included), the value should be zero -- otherwise
 the frame is dropped.
 
 Moving up to the network layer, \a{IPv6} does not embody a checksum at
-all \cite{RFC2460}. The \a{IPv4} header contains a one's complement checksum of the
-header itself \cite{RFC0791}. The maximum size of the header is 60 bytes,
+all~\cite{RFC2460}. The \a{IPv4} header contains a one's complement checksum of the
+header itself~\cite{RFC0791}. The maximum size of the header is 60 bytes,
 therefore the checksum is not expensive to compute in software. Still, many controllers are
 capable of computing the \a{IPv4} header checksum before transmission.
 
@@ -218,7 +218,7 @@ behavior.
 
 We will show two examples of how multiple queues can be used. In the first one, assume that
 the scheduling algorithm is round-robin, thus every queue is treated equally
-(with respect to the number of packets, not bytes sent). In a sense, the host can
+(with respect to the number of packets, not bytes sent). In a~sense, the host can
 treat every queue as a separate interface to a shared medium. On
 a multiprocessor system, it is possible to dedicate one queue to every core,
 offloading the synchronization between the cores to the \a{NIC}. The downside of
@@ -240,7 +240,7 @@ system administrator. The \a{NIC} driver must make sure that the current
 scheduling algorithm is compatible with what the \a{NIC} employs.
 
 Recent controllers offer some flexibility in terms of configuration of the
-scheduling algorithm. For example, the Intel XL710 controller \cite{XL710}
+scheduling algorithm. For example, the Intel XL710 controller~\cite{XL710}
 defines queue sets, which can be arranged to a tree. The leaf nodes are queue sets,
 the inner nodes select its children in a configurable combination of weighted
 strict priority and weighted round robin order. The bandwidth is distributed
@@ -256,7 +256,7 @@ the queues and the selection of algorithm the to do so creates space for offload
 
 To take advantage of multiple processors available for processing
 network traffic, a simple mechanism called \emph{Receive-Side Scaling} was
-specified by Microsoft in the Network Driver Interface Specification \cite{NDIS}.
+specified by Microsoft in the Network Driver Interface Specification~\cite{NDIS}.
 
 The idea is that similarly processed packets should be handled by the same
 \a{CPU} to maximize the benefits of caching. Also, packets from a single flow are
@@ -266,8 +266,8 @@ source and destination ports, and calculates a hash function of those. The lower
 bits of the result are used to select the target queue. Queues are then uniformly
 distributed among \a{CPU}s and the interrupt affinity is set accordingly.
 
-One might dispute \a{RSS} being considered an offload, as it does not have a
-software predecessor. We can take \a{RSS} as a reason why multiple receive queues
+One might dispute \a{RSS} being considered an offload, as it does not have
+a~software predecessor. We can take \a{RSS} as a reason why multiple receive queues
 exist and as an inspiration for all other multi-queue offloads.
 
 \subsubsection{Differentiated Services}
@@ -281,7 +281,7 @@ mapping then allows the software stack to handle certain traffic classes with hi
 priority than the others.
 
 Differentiating traffic classes as soon as possible is important under heavy load. For
-example, \a{TCP} avoids congestion by lowering the transmission rate when a segment is lost.
+example, \a{TCP} avoids congestion by lowering the transmission rate when a~segment is lost.
 This means that the rate is only lowered when some network element decides to drop
 a packet. Unless some more sophisticated algorithm to drop packets earlier is
 employed, packets are dropped only when a queue is overfilled. That results in
@@ -311,18 +311,18 @@ other hand, several switch \a{ASIC}s are equipped with packet parsers fully
 programmable by firmware updates, and therefore we can expect similar
 flexibility in \a{NIC} controllers in a foreseeable future.
 
-Usually, the matching rules are arranged into tables. There can be either a fixed pipeline of
-tables, or a table hierarchy might be defined at runtime, or a combination of
+Usually, the matching rules are arranged into tables. There can be either a~fixed pipeline of
+tables, or a table hierarchy might be defined at runtime, or a~combination of
 both. Every rule carries a queue number, which is used whenever a packet
 matches the rule.
 
 Multiple modes of matching on a field can be distinguished. First, the field
 might be examined for an exact value. Or, every rule can contain a \emph{value}
-and a \emph{mask}. Rarely, the fields can be compared with ranges or
+and a~emph{mask}. Rarely, the fields can be compared with ranges or
 a longest-prefix match can be selected.
 
 In the exact-match mode, a controller can use a special type of memory called
-\acrfull{CAM} -- a memory where lookup of a row with a given value is done on all
+\acrfull{CAM} -- a memory where lookup of a row with a~given value is done on all
 rows in parallel. Or, it can use hash tables and store the tables in \a{RAM},
 but that requires collision handling.
 
@@ -365,7 +365,7 @@ ports going out from the \a{NIC}, naturally creating the need for switching.
 The usual scheme is that the adapter external ports as well as the physical and
 virtual functions are connected as ports to an inner switch. The need for
 switching becomes even more apparent with multi-host network adapters, such
-as the Mellanox ConnectX-5 \cite{mlx5-pb} based adapters.
+as the Mellanox ConnectX-5~\cite{mlx5-pb} based adapters.
 
 The existence of an inner switch is not hidden by the controller. Inner switches
 are usually not that performant and flexible as fully-fledged switch controllers,
@@ -384,17 +384,17 @@ explicitly. The controller reactively plans paths for packet flows and
 configures the network accordingly, replacing the distributed switching
 algorithm with a centralized one. The
 communication between the switch and the controller is realized by a protocol
-designed for this purpose -- for example the OpenFlow protocol \cite{openflow}.
+designed for this purpose -- for example the OpenFlow protocol~\cite{openflow}.
 
 To perform forwarding in an \a{SDN} environments, switches feature a flow table. When
 an unknown packet is received, it is forwarded to the controller. It then
 identifies the flow and installs a rule into the switch flow table. The next time
-a packet from this flow is received, it is forwarded without controller
+a~packet from this flow is received, it is forwarded without controller
 intervention. As the memory of the switch is limited, unused flow table entries
 are evicted.
 
 This model is commonly described as a layered one, the controller being
-a control plane and the forwarder being a data plane. While the control plane
+a~control plane and the forwarder being a data plane. While the control plane
 focuses on flexibility and features, the data plane focuses on performance. This
 separation can be observed in many instances in the networking world.
 
@@ -435,9 +435,9 @@ tunnels must be done as well to enable flow offloading in these scenarios.
 The problem of tunnel offloading is its future compatibility and flexibility.
 It takes a lot of time since the controller is designed until it is used in
 a network adapter available on the market. Furthermore, the card is expected to
-last a few years. On the other hand, new tunnelling protocols are still being
+last a~few years. On the other hand, new tunnelling protocols are still being
 developed (e.g.\ the Geneve protocol, first drafted in 2014, is still not
-standardized but is in active development \cite{ietf-nvo3-geneve-06}). The
+standardized but is in active development~\cite{ietf-nvo3-geneve-06}). The
 functionality of tunnel engines can be superseded by programmable actions
 described in Section \ref{offload:match-action}.
 
@@ -522,7 +522,7 @@ protocol-agnostic packet processing. For that to be possible, the parser needs
 to extract fields from the unknown protocol to match on them. The OpenFlow
 protocol (in version 1.5) defines a set of matchable fields, which
 cannot be extended. That limits its usage for switches with programmable
-pipelines \cite{openflow}.
+pipelines~\cite{openflow}.
 
 As stated earlier, there are several switch controllers on the market that are
 equipped with a parser programmable by firmware updates. Such a controller can be
@@ -539,7 +539,7 @@ the flow (see Section \ref{mlx:pipeline}).
 
 % Removed paragraphs for easier access:
 %
-% The pipeline can be formally described in the \a{P4} language \cite{P4}.
+% The pipeline can be formally described in the \a{P4} language~\cite{P4}.
 % A program in \a{P4} specifies two aspects of the pipeline: the header parser
 % and the match-action pipeline. The language is expressive enough to describe
 % many existing fixed pipelines, yet constrained enough to allow implementation

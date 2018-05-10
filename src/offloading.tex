@@ -378,7 +378,7 @@ hidden, creating a virtual overlay network over the physical one.
 To give an example, consider a data center running virtual machines, that are
 migrated to balance load. Traditional network elements would react too
 slowly to enable this scenario, so an externally configurable, more flexible
-switch is used instead.\a{SDN}-configured switches do not try to find paths by
+switch is used instead. \a{SDN}-configured switches do not try to find paths by
 themselves, they need to be programmed by a standalone \a{SDN} controller
 explicitly. The controller reactively plans paths for packet flows and
 configures the network accordingly, replacing the distributed switching
@@ -420,7 +420,7 @@ features can be found even in \a{SOHO} switches. The switch can
 transparently emulate multiple networks by adding and removing \a{VLAN} tags on
 the client ports. To improve virtual network isolation, the port traffic
 can be usually filtered based on the \a{VLAN} tags. Similar features with
-tunneling protocols can be found in high-end switches.
+tunneling protocols like \a{VXLAN} or \a{GRE} can be found in high-end switches.
 
 When a host runs multiple virtual machines, it probably needs to be connected
 to multiple virtual networks. In other words, the tunnel processing must be
@@ -468,8 +468,8 @@ All the advanced classification offloads described so far can be further
 generalized by moving closer to the hardware implementation.
 
 A packet processor usually features a pipeline that can be described as
-follows. When a packet arrives, it is parsed by a parser. Metadata and
-individual header fields are extracted to a metadata following the packet
+follows. When a packet arrives, it is parsed by a parser.
+Individual header fields are extracted to a metadata following the packet
 through the pipeline. Then, a series of match-action steps is performed. In
 every step, the packet metadata is used to search for a matching entry a table,
 using match modes previously described in Section \ref{offload:classification}.
@@ -484,14 +484,14 @@ the changes in metadata back to the packet to reflect all actions. The last step
 necessary to avoid touching the packet data directly from the pipeline, which
 is complicated.
 
-The OpenFlow protocol operates on tables, header fields and actions, and
-assumes that the switch packet
-processing pipeline has the architecture described.
+Notably, this pipeline architecture is well reflected by the OpenFlow protocol,
+which operates on tables, header fields and actions, and
+assumes that the packet processing pipeline is similar to above.
 
 In the most common case the processing pipeline is fixed. It might be
 linear or have branches, but usually cannot contain cycles. Every table in
 a fixed pipeline has a predefined set of headers matched (and the mode of
-matching), and a set of actions allowed.
+matching as described in Section \ref{offload:classification}), and a set of actions allowed.
 
 For example, the switching decision of an ordinary switch can be described as a table
 performing a lookup on the destination \a{MAC} address. If the address is known,

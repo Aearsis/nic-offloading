@@ -1,7 +1,7 @@
 \chapter{Hardware Offloading in Linux}
 \label{chap:linux}
 
-Before we dive into how Linux supports various offloading techniques, how they
+Before we dive into how Linux supports various offloading techniques and how they
 are configured and implemented, let us recall the development
 model of the networking stack in Linux kernel. Linux
 community does not publish any guidelines for network device vendors like
@@ -359,7 +359,7 @@ Instead of giving up on late segmentation, the payload is split in two. The
 first is sized to an integral multiple of \a{MSS}, the second holds the last
 segment of the different size.
 
-Unfortunately, the \a{IPv4} ID will be the same for all packet segments.
+Unfortunately, the \a{IPv4} ID will be the same for all segments.
 However, \a{TCP} streams require \a{IPv4} packets to carry the ``Don't
 Fragment'' flag, therefore the ID should not be examined by any network device,
 as proposed in RFC~6864~\cite{RFC6864}.

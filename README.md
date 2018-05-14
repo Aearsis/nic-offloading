@@ -4,31 +4,22 @@ This is my master thesis at Charles University in Prague.
 
 ### Abstract
 
-Network interface controllers offer features that assist the host with
-packet processing. For modern controllers, these features include
-increasingly flexible classification and modification of packets. The Linux
-kernel utilizes these features only by offloading the work of the Traffic
-Control subsystem, which was designed for a completely different purpose,
-making the offload inconvenient and unreliable.
+Modern network interface controllers allow the host to offload packet
+processing to hardware in order to improve performance. At the present
+time, the advanced features are utilized in the Linux kernel by offloading
+the Traffic Control subsystem. Since this subsystem has been designed for
+a completely different purpose, its usage for hardware offloading is
+impractical and unreliable. Furthermore, in its current state the subsystem
+is not capable of utilizing all hardware features, which are often poorly
+documented.
 
-We propose a new subsystem that would allow utilization of features of
-modern conrollers, while avoiding the problems that come with offloading
-Traffic Control. To have a solid base, we examined five high-end
-controllers and determined their capabilities in detail. The information
-about these controllers, extracted from datasheets and source codes, is
-also included in the thesis. Finally, as there is no extensive up-to-date
-overview of the current hardware offloading techniques, we start by
-introducing the reader to them in general.
+The presented work adopts a different approach to the problem. Five
+high-end controllers and their packet-processing pipelines were examined in
+detail. Accounting for their projected future development, common traits
+and features were identified. The researched information was used to draft
+a proposal for a new Linux subsystem, more compatible with hardware
+offloading than the current solution. The proposed subsystem defines
+a sufficiently descriptive interface to utilize the majority of
+hardware-offloaded features while avoiding common problems caused by
+excessively generalized approach of Traffic Control.
 
-### PDF version
-
-Hopefully, the thesis in PDF is be available [for download.](http://eideo.cz/master-thesis.pdf).
-
-Otherwise, you can always build it yourself, but don't forget the build system
-git submodule:
-
-```bash
-$ git clone --recurse-submodules git://github.com/Aearsis/nic-offloading
-$ cd nic-offloading
-$ make
-```

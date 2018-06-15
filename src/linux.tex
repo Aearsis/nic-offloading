@@ -838,7 +838,7 @@ for both \a{QoS} and packet processing at the same time.
 
 Therefore, Daniel Borkmann introduced the \texttt{clsact} \qdisc
 \cite{linux-tc-clsact}. Essentially, it is an \texttt{ingress} \qdisc{} to which
-two filter vlocks can be attached. One of them is used as the ingress chain as
+two filter blocks can be attached. One of them is used as the ingress chain as
 with the \texttt{ingress} \qdisc, the other one gets executed for egress traffic
 with a new hook. This way, the \a{TC} subsystem is invoked twice for an egress
 packet -- first for the egress chain in the \texttt{clsact} \qdisc, second for the
